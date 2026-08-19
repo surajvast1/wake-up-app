@@ -1,0 +1,17 @@
+node_modules
+.expo
+dist
+web-build
+.git
+.gitignore
+android
+ios
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+coverage
+.env
+.env.*
+!.env.example

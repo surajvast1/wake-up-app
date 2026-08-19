@@ -1,0 +1,47 @@
+# EAS Build ignore — same as .gitignore but keeps .env so
+# EXPO_PUBLIC_* keys are available at bundle time.
+
+# dependencies
+node_modules/
+
+.npm-cache/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# test / dev-only
+test/
+.dockerignore
+Dockerfile
+docker-compose.yml
