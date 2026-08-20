@@ -58,24 +58,13 @@ Open `.env` and fill in the values you have:
 ```dotenv
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_ANON_KEY=
-EXPO_PUBLIC_GOOGLE_WHEATHER_API_KEY=
-EXPO_PUBLIC_GOOGLE_PLACES_API_KEY=
-EXPO_PUBLIC_AQICN_TOKEN=
-EXPO_PUBLIC_OPENROUTER_API_KEY=
-EXPO_PUBLIC_OPENAI_API_KEY=
 ```
 
 | Variable | Use |
 | --- | --- |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase authentication and cloud sync |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anonymous key |
-| `EXPO_PUBLIC_GOOGLE_WHEATHER_API_KEY` | Weather and Google services |
-| `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` | Nearby places |
-| `EXPO_PUBLIC_AQICN_TOKEN` | AQICN/WAQI air-quality data |
-| `EXPO_PUBLIC_OPENROUTER_API_KEY` | AI-generated daily quotes |
-| `EXPO_PUBLIC_OPENAI_API_KEY` | Optional task suggestions |
-
-Guest mode and local storage can work without Supabase. Weather, nearby places, air quality, news, and AI features need their corresponding keys.
+The current app only requires Supabase. Email authentication, tasks, habits, and database-backed news use this configuration.
 
 Expo embeds every `EXPO_PUBLIC_*` value into the app bundle. Restart Metro after editing `.env`. Never commit `.env` or put private server keys in public Expo variables.
 
@@ -268,4 +257,3 @@ npx expo start --lan --clear --go
 ## License
 
 This project does not currently include a license file.
-
