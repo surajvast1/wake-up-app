@@ -8,8 +8,27 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
+import { makeRedirectUri } from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { dataStorageScope } from "../lib/dataStorageScope";
+
+WebBrowser.maybeCompleteAuthSession();
+
+function parseOAuthCallback(url: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const part of [url.split("?")[1]?.split("#")[0], url.split("#")[1]]) {
+    if (!part) continue;
+    for (const pair of part.split("&")) {
+      const [rawKey, ...rawValue] = pair.split("=");
+      if (!rawKey) continue;
+      const decode = (value: string) =>
+        decodeURIComponent(value.replace(/\+/g, " "));
+      params[decode(rawKey)] = decode(rawValue.join("="));
+    }
+  }
+  return params;
+}
 
 export interface GuestSession {
   name: string;
@@ -21,7 +40,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   configured: boolean;
-  /** Deprecated compatibility flag; guest mode is disabled. */
+  /** Temporary guest access flag. */
   isGuest: boolean;
   guestSession: GuestSession | null;
   needsName: boolean;
@@ -29,6 +48,7 @@ interface AuthContextType {
   storageScope: string;
   sendEmailOtp: (email: string) => Promise<{ error?: string }>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ error?: string }>;
+  signInWithGoogle: () => Promise<{ error?: string; cancelled?: boolean }>;
   continueAsGuest: (name: string) => Promise<{ error?: string }>;
   saveUserName: (name: string) => Promise<{ error?: string }>;
   updateGuestProfile: (updates: Partial<GuestSession>) => Promise<void>;
@@ -114,6 +134,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     return {};
   }, []);
 
+  const signInWithGoogle = useCallback(async () => {
+    if (!supabaseConfigured) return { error: "Supabase is not configured." };
+
+    try {
+      const redirectTo = makeRedirectUri({
+        scheme: "uniflow",
+        path: "auth/callback",
+      });
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+
+      if (error) return { error: error.message };
+      if (!data.url) return { error: "Google sign-in could not be started." };
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type === "cancel" || result.type === "dismiss") {
+        return { cancelled: true };
+      }
+      if (result.type !== "success" || !result.url) {
+        return { error: "Google sign-in did not complete. Please try again." };
+      }
+
+      const params = parseOAuthCallback(result.url);
+      const oauthError =
+        params.error_description || params.error || params.errorCode;
+      if (oauthError) return { error: oauthError };
+
+      if (params.code) {
+        const { data: codeData, error: codeError } =
+          await supabase.auth.exchangeCodeForSession(params.code);
+        if (codeError) return { error: codeError.message };
+        if (!codeData.session?.user) {
+          return { error: "Google approved the request, but no session was created." };
+        }
+        return {};
+      }
+
+      if (!params.access_token || !params.refresh_token) {
+        return { error: "Google approved the request, but no session tokens were returned." };
+      }
+
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.setSession({
+          access_token: params.access_token,
+          refresh_token: params.refresh_token,
+        });
+      if (sessionError) return { error: sessionError.message };
+      if (!sessionData.session?.user) {
+        return { error: "Google approved the request, but no session was created." };
+      }
+      return {};
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Google sign-in failed. Please try again.",
+      };
+    }
+  }, []);
+
   const saveUserName = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return { error: "Please enter your name" };
@@ -127,9 +214,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     return {};
   }, [user]);
 
-  const continueAsGuest = useCallback(async () => ({
-    error: "Guest mode is disabled. Please use email sign in.",
-  }), []);
+  // TEMPORARY GUEST ACCESS: remove this callback and the login-screen button
+  // when Google/email authentication is mandatory.
+  const continueAsGuest = useCallback(async (name: string) => {
+    const guest: GuestSession = {
+      name: name.trim() || "Guest",
+      photoUri: null,
+    };
+    setSession(null);
+    setUser(null);
+    setNeedsName(false);
+    setGuestSession(guest);
+    setIsGuest(true);
+    return {};
+  }, []);
 
   const updateGuestProfile = useCallback(async (_updates: Partial<GuestSession>) => {}, []);
 
@@ -157,6 +255,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         storageScope,
         sendEmailOtp,
         verifyEmailOtp,
+        signInWithGoogle,
         continueAsGuest,
         saveUserName,
         updateGuestProfile,

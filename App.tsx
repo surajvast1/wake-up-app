@@ -4,10 +4,8 @@ import {
   ActivityIndicator,
   StyleSheet,
   LogBox,
-  Platform,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import Constants from "expo-constants";
 
 LogBox.ignoreLogs([
   "setLayoutAnimationEnabledExperimental",
@@ -32,6 +30,7 @@ import LoginScreen from "./src/screens/auth-screen/LoginScreen";
 import OtpScreen from "./src/screens/auth-screen/OtpScreen";
 import GuestNameScreen from "./src/screens/auth-screen/GuestNameScreen";
 import { AppErrorBoundary } from "./src/components/AppErrorBoundary";
+import { initializeMobileAds } from "./src/lib/mobileAds";
 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -91,16 +90,11 @@ const loadStyles = StyleSheet.create({
 
 function useMobileAdsInit(): void {
   useEffect(() => {
-    if (Platform.OS !== "android" && Platform.OS !== "ios") return;
-    if (Constants.appOwnership === "expo") return;
     let cancelled = false;
     void (async () => {
       try {
-        const { default: mobileAds } = await import(
-          "react-native-google-mobile-ads"
-        );
         if (cancelled) return;
-        await mobileAds().initialize();
+        await initializeMobileAds();
       } catch (e) {
         console.warn("Mobile Ads init skipped or failed:", e);
       }
@@ -112,9 +106,11 @@ function useMobileAdsInit(): void {
 }
 
 const RootNavigator = () => {
-  const { user, loading, configured, needsName } = useAuth();
+  const { user, loading, configured, needsName, isGuest } = useAuth();
 
   if (loading) return <LoadingScreen />;
+  // TEMPORARY GUEST ACCESS: remove this branch when guest login is retired.
+  if (isGuest) return <GatedMain />;
   if (!configured) return <AuthStack />;
   return user ? (needsName ? <AuthStack initialRouteName="name" /> : <GatedMain />) : <AuthStack />;
 };

@@ -21,9 +21,9 @@ const LoginScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { colors: c, isDark } = useAppTheme();
-  const { sendEmailOtp } = useAuth();
+  const { sendEmailOtp, signInWithGoogle, continueAsGuest } = useAuth();
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"email" | "google" | "guest" | null>(null);
   const [error, setError] = useState("");
 
   const sendCode = async () => {
@@ -32,12 +32,29 @@ const LoginScreen: React.FC = () => {
       setError("Enter a valid email address");
       return;
     }
-    setLoading(true);
+    setLoading("email");
     setError("");
     const result = await sendEmailOtp(cleanEmail);
-    setLoading(false);
+    setLoading(null);
     if (result.error) setError(result.error);
     else navigation.navigate("otp", { email: cleanEmail });
+  };
+
+  const continueWithGoogle = async () => {
+    setLoading("google");
+    setError("");
+    const result = await signInWithGoogle();
+    setLoading(null);
+    if (result.error) setError(result.error);
+  };
+
+  // TEMPORARY GUEST ACCESS: remove this handler with the guest button below.
+  const loginAsGuest = async () => {
+    setLoading("guest");
+    setError("");
+    const result = await continueAsGuest("Guest");
+    setLoading(null);
+    if (result.error) setError(result.error);
   };
 
   const bgGrad = isDark
@@ -61,8 +78,32 @@ const LoginScreen: React.FC = () => {
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text style={[styles.title, { color: c.text }]}>Sign in or create account</Text>
           <Text style={[styles.subtitle, { color: c.textSecondary }]}>
-            Enter your email. We’ll send a free one-time verification code.
+            Continue with Google, or enter your email for a one-time verification code.
           </Text>
+          <Pressable
+            onPress={() => void continueWithGoogle()}
+            disabled={loading !== null || !supabaseConfigured}
+            style={({ pressed }) => [
+              styles.googleButton,
+              { backgroundColor: c.surface, borderColor: c.inputBorder },
+              pressed && { opacity: 0.85 },
+              (loading !== null || !supabaseConfigured) && { opacity: 0.6 },
+            ]}
+          >
+            {loading === "google" ? (
+              <ActivityIndicator color={c.text} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={20} color="#4285F4" />
+                <Text style={[styles.googleButtonText, { color: c.text }]}>Continue with Google</Text>
+              </>
+            )}
+          </Pressable>
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
+            <Text style={[styles.dividerText, { color: c.textMuted }]}>OR</Text>
+            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
+          </View>
           <Text style={[styles.label, { color: c.textSecondary }]}>Email address</Text>
           <TextInput
             style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
@@ -85,10 +126,30 @@ const LoginScreen: React.FC = () => {
           {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
           <Pressable
             onPress={() => void sendCode()}
-            disabled={loading || !supabaseConfigured}
-            style={({ pressed }) => [styles.button, { backgroundColor: c.primary }, pressed && { opacity: 0.85 }, (loading || !supabaseConfigured) && { opacity: 0.6 }]}
+            disabled={loading !== null || !supabaseConfigured}
+            style={({ pressed }) => [styles.button, { backgroundColor: c.primary }, pressed && { opacity: 0.85 }, (loading !== null || !supabaseConfigured) && { opacity: 0.6 }]}
           >
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send email code</Text>}
+            {loading === "email" ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send email code</Text>}
+          </Pressable>
+          {/* TEMPORARY GUEST ACCESS: remove this button when auth is mandatory. */}
+          <Pressable
+            onPress={() => void loginAsGuest()}
+            disabled={loading !== null}
+            style={({ pressed }) => [
+              styles.guestButton,
+              { borderColor: c.border },
+              pressed && { opacity: 0.75 },
+              loading !== null && { opacity: 0.6 },
+            ]}
+          >
+            {loading === "guest" ? (
+              <ActivityIndicator color={c.textSecondary} />
+            ) : (
+              <>
+                <Ionicons name="person-outline" size={18} color={c.textSecondary} />
+                <Text style={[styles.guestButtonText, { color: c.textSecondary }]}>Continue as guest</Text>
+              </>
+            )}
           </Pressable>
         </View>
         <Text style={[styles.terms, { color: c.textMuted }]}>
@@ -111,10 +172,17 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, lineHeight: 20, marginBottom: 22 },
   label: { fontSize: 12, fontWeight: "800", marginBottom: 8 },
   input: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, marginBottom: 12 },
+  googleButton: { minHeight: 52, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 14 },
+  googleButtonText: { fontSize: 16, fontWeight: "800" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 18 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  dividerText: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   hint: { fontSize: 12, lineHeight: 17, marginBottom: 10 },
   error: { fontSize: 13, fontWeight: "700", marginBottom: 12 },
   button: { alignItems: "center", borderRadius: 14, paddingVertical: 15, marginTop: 6 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "900" },
+  guestButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12 },
+  guestButtonText: { fontSize: 14, fontWeight: "800" },
   terms: { textAlign: "center", fontSize: 12, marginTop: 22 },
 });
 
