@@ -19,13 +19,13 @@ import { useAuth } from "../contexts/AuthContext";
 import { useAppTheme } from "../contexts/ThemeContext";
 import type { AppColors } from "../theme/colors";
 import { supabase, supabaseConfigured } from "../lib/supabase";
-import { loadMyFeedArticles } from "../services/myFeedService";
 import {
   APP_SESSION_SEED,
   fetchBreakingArticles,
   isBreakingArticle,
   rotatePicks,
   seededShuffle,
+  fetchMixedDigestArticles,
 } from "../services/newsService";
 import type { NewsArticle } from "../services/newsService";
 
@@ -39,12 +39,8 @@ interface NavItem {
 const MAIN_ITEMS: NavItem[] = [
   { route: "dashboard", label: "Home", icon: "home-outline" },
   { route: "news", label: "News", icon: "newspaper-outline" },
-  { route: "tasks", label: "Tasks", icon: "checkbox-outline" },
   { route: "habits", label: "Habits", icon: "bar-chart-outline" },
-  { route: "routines", label: "Routines", icon: "sunny-outline" },
-  { route: "calendar", label: "Calendar", icon: "calendar-outline" },
-  { route: "meditation", label: "Meditate", icon: "leaf-outline" },
-  { route: "nearby", label: "Nearby", icon: "location-outline" },
+  { route: "profile", label: "Settings", icon: "settings-outline" },
 ];
 
 const DRAWER_TEASER_COUNT = 3;
@@ -389,9 +385,8 @@ const DrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const insets = useSafeAreaInsets();
   const { colors: c, isDark } = useAppTheme();
   const styles = useMemo(() => createDrawerStyles(c, isDark), [c, isDark]);
-  const { user, signOut, configured, isGuest, guestSession, storageScope } =
+  const { user, configured, isGuest, guestSession } =
     useAuth();
-  const supabaseUserId = isGuest ? null : user?.id ?? null;
   const [localName, setLocalName] = useState("");
   const [localPhoto, setLocalPhoto] = useState<string | null>(null);
   const [drawerTeasers, setDrawerTeasers] = useState<NewsArticle[]>([]);
@@ -452,12 +447,7 @@ const DrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
     void (async () => {
       try {
         const [rows, breaking] = await Promise.all([
-          loadMyFeedArticles(storageScope, supabaseUserId, {
-            limit: 10,
-            digestPerCategory: 2,
-            skipSeenFilter: true,
-            includeBreaking: true,
-          }),
+          fetchMixedDigestArticles(2),
           fetchBreakingArticles(4).catch(() => [] as NewsArticle[]),
         ]);
         const rotated = rotatePicks(
@@ -484,7 +474,7 @@ const DrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
     return () => {
       alive = false;
     };
-  }, [drawerStatus, storageScope, supabaseUserId]);
+  }, [drawerStatus]);
 
   const activeRoute = props.state.routes[props.state.index]?.name;
 
@@ -660,79 +650,9 @@ const DrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
           </View>
         ) : null}
 
-        <View style={styles.teaserSection}>
-          <View style={styles.teaserHeadingRow}>
-            <Text style={styles.teaserHeading}>Explore nearby</Text>
-            <Pressable
-              onPress={() => {
-                props.navigation.closeDrawer();
-                props.navigation.navigate("nearby");
-              }}
-              hitSlop={6}
-            >
-              <Text style={styles.teaserHeadingCta}>See all →</Text>
-            </Pressable>
-          </View>
-          <View style={styles.nearbyStack}>
-            {nearbyVibePicks.map((vibe) => {
-              const tintBg = hexWithAlpha(vibe.accent, isDark ? 0.18 : 0.12);
-              const tintBorder = hexWithAlpha(vibe.accent, isDark ? 0.38 : 0.25);
-              const bubbleBg = hexWithAlpha(vibe.accent, isDark ? 0.32 : 0.2);
-              return (
-                <Pressable
-                  key={vibe.id}
-                  onPress={() => {
-                    props.navigation.closeDrawer();
-                    props.navigation.navigate("nearby", {
-                      initialQuery: vibe.query,
-                      _nearbyNavTs: Date.now(),
-                    });
-                  }}
-                  style={({ pressed }) => [
-                    styles.nearbyCard,
-                    {
-                      backgroundColor: tintBg,
-                      borderColor: tintBorder,
-                    },
-                    pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <View
-                    style={[styles.nearbyIconBubble, { backgroundColor: bubbleBg }]}
-                  >
-                    <Ionicons name={vibe.icon} size={20} color={vibe.accent} />
-                  </View>
-                  <View style={styles.nearbyTextCol}>
-                    <Text style={styles.nearbyTitle} numberOfLines={1}>
-                      {vibe.title}
-                    </Text>
-                    <Text style={styles.nearbySubtitle} numberOfLines={1}>
-                      {vibe.subtitle}
-                    </Text>
-                  </View>
-                  <Ionicons name="arrow-forward" size={18} color={vibe.accent} />
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
       </ScrollView>
 
       <View style={styles.divider} />
-
-      <Pressable
-        onPress={signOut}
-        style={({ pressed }) => [
-          styles.navItem,
-          pressed && { opacity: 0.8 },
-          { marginTop: 4 },
-        ]}
-      >
-        <Ionicons name="log-out-outline" size={20} color={c.danger} />
-        <Text style={[styles.navLabel, { color: c.danger }]}>
-          {isGuest ? "Leave guest mode" : "Sign Out"}
-        </Text>
-      </Pressable>
 
       <View style={{ height: insets.bottom + 16 }} />
     </View>

@@ -22,7 +22,7 @@ import { useAppTheme } from "../../contexts/ThemeContext";
 import type { AppColors, ThemePreference } from "../../theme/colors";
 import { supabase, supabaseConfigured } from "../../lib/supabase";
 import { uploadProfilePhotoToStorage } from "../../lib/profilePhotoUpload";
-import MenuButton from "../../components/MenuButton";
+import BackHomeButton from "../../components/BackHomeButton";
 
 const LOCAL_PROFILE_KEY = "LOCAL_PROFILE";
 
@@ -417,6 +417,7 @@ const ProfileScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, configured, isGuest, guestSession]);
 
+
   const loadProfile = async () => {
     if (isGuest) return;
     let photoFromLocal: string | null | undefined;
@@ -570,32 +571,7 @@ const ProfileScreen: React.FC = () => {
     ? (["#1F2A24", "#2A3A32", "#3A4F44"] as const)
     : (["#5B7553", "#6C8C63", "#86A97B"] as const);
 
-  const links: LinkRowDef[] = [
-    {
-      id: "edit-ui",
-      icon: "color-wand",
-      title: "Edit UI",
-      subtitle: "Choose cards, order, colors, and temp Lottie",
-      route: "edit-ui",
-      accent: "#14B8A6",
-    },
-    {
-      id: "liked",
-      icon: "heart",
-      title: "Liked items",
-      subtitle: "News and quotes you've saved",
-      route: "liked-items",
-      accent: "#EC4899",
-    },
-    {
-      id: "sources",
-      icon: "people",
-      title: "Quote sources",
-      subtitle: "People whose words inspire you",
-      route: "favorite-people",
-      accent: "#6366F1",
-    },
-  ];
+  const links: LinkRowDef[] = [];
 
   const handleText =
     user?.email ||
@@ -604,7 +580,7 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <MenuButton />
+      <BackHomeButton />
 
       {toastMsg !== "" && (
         <RNAnimated.View

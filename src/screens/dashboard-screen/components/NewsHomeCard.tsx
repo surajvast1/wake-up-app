@@ -10,14 +10,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAppTheme } from "../../../contexts/ThemeContext";
-import { useAuth } from "../../../contexts/AuthContext";
 import HomeDashboardGradientCard from "../../../components/HomeDashboardGradientCard";
 import {
   getHomeDashboardCardAccent,
   getHomeDashboardCardText,
   homeCardIconBubbleBg,
 } from "../../../theme/homeDashboardCardTheme";
-import { loadMyFeedArticles } from "../../../services/myFeedService";
 import {
   APP_SESSION_SEED,
   displayCategoryLabel,
@@ -25,7 +23,7 @@ import {
   isBreakingArticle,
   rotatePicks,
   timeAgo,
-  NEWS_CATEGORIES,
+  fetchMixedDigestArticles,
   type NewsArticle,
 } from "../../../services/newsService";
 
@@ -34,8 +32,6 @@ const PLACEHOLDER_GRADIENT_BG = "#1e293b";
 const NewsHomeCard: React.FC = () => {
   const navigation = useNavigation<any>();
   const { isDark } = useAppTheme();
-  const { storageScope, user, isGuest } = useAuth();
-  const supabaseUserId = isGuest ? null : user?.id ?? null;
   const accent = useMemo(
     () => getHomeDashboardCardAccent("news", isDark),
     [isDark]
@@ -50,12 +46,7 @@ const NewsHomeCard: React.FC = () => {
     setLoading(true);
     try {
       const [items, breaking] = await Promise.all([
-        loadMyFeedArticles(storageScope, supabaseUserId, {
-          limit: 12,
-          digestPerCategory: 2,
-          skipSeenFilter: true,
-          includeBreaking: true,
-        }),
+        fetchMixedDigestArticles(3),
         fetchBreakingArticles(6).catch(() => [] as NewsArticle[]),
       ]);
 
@@ -84,7 +75,7 @@ const NewsHomeCard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [storageScope, supabaseUserId]);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -105,10 +96,8 @@ const NewsHomeCard: React.FC = () => {
 
   const openArticle = useCallback(
     (article: NewsArticle | null) => {
-      /** Stories on Home come from My Feed — land on that tab so deep-link scroll finds the row. */
-      const myFeedIdx = NEWS_CATEGORIES.indexOf("My Feed");
       navigation.navigate("news", {
-        initialCategoryIndex: myFeedIdx >= 0 ? myFeedIdx : 0,
+        initialCategoryIndex: 0,
         initialArticleLink: article?.link ?? null,
         initialArticleId: article?.id ?? null,
         _newsNavTs: Date.now(),

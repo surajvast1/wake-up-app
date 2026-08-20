@@ -5,11 +5,6 @@ import {
   fetchHabits,
   toggleLog,
 } from "./habitService";
-import {
-  createRoutine,
-  createRoutineItemRow,
-  fetchRoutines,
-} from "../features/routine/services/routineService";
 
 const GUEST_DEMO_SEED_KEY = "GUEST_DEMO_DATA_V1";
 
@@ -37,7 +32,7 @@ export async function seedGuestDemoData(): Promise<void> {
         title: "Plan the day",
         description: "Choose one important thing to finish today.",
         date: today,
-        time: "09:00",
+        time: "",
         priority: "high",
         completed: false,
       },
@@ -49,7 +44,7 @@ export async function seedGuestDemoData(): Promise<void> {
         title: "Take a short walk",
         description: "A little movement between tasks.",
         date: today,
-        time: "17:30",
+        time: "",
         priority: "medium",
         completed: false,
       },
@@ -61,7 +56,7 @@ export async function seedGuestDemoData(): Promise<void> {
         title: "Prepare for tomorrow",
         description: "Set up an easier morning.",
         date: tomorrow,
-        time: "20:00",
+        time: "",
         priority: "low",
         completed: false,
       },
@@ -94,42 +89,6 @@ export async function seedGuestDemoData(): Promise<void> {
     );
     await toggleLog(reading.id, today, undefined, true);
     await toggleLog(movement.id, tomorrow, undefined, true);
-  }
-
-  const routines = await fetchRoutines(undefined, true);
-  if (routines.length === 0) {
-    const routine = await createRoutine(
-      {
-        name: "A calm start",
-        routine_type: "morning",
-        icon: "sunny-outline",
-        color: "#D97706",
-      },
-      undefined,
-      true
-    );
-    await createRoutineItemRow(
-      routine.id,
-      {
-        title: "Drink water",
-        description: "Start with a glass of water.",
-        estimated_time: 2,
-        is_mandatory: true,
-      },
-      undefined,
-      true
-    );
-    await createRoutineItemRow(
-      routine.id,
-      {
-        title: "Review your intention",
-        description: "Decide how you want to move through today.",
-        estimated_time: 5,
-        is_mandatory: true,
-      },
-      undefined,
-      true
-    );
   }
 
   await AsyncStorage.setItem(GUEST_DEMO_SEED_KEY, "1");

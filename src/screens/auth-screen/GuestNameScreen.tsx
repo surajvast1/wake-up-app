@@ -20,7 +20,7 @@ const GuestNameScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors: c, isDark } = useAppTheme();
   const navigation = useNavigation<any>();
-  const { continueAsGuest } = useAuth();
+  const { saveUserName } = useAuth();
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +28,7 @@ const GuestNameScreen: React.FC = () => {
   const onContinue = async () => {
     setLoading(true);
     setError("");
-    const result = await continueAsGuest(name);
+    const result = await saveUserName(name);
     setLoading(false);
     if (result.error) setError(result.error);
   };
@@ -58,10 +58,9 @@ const GuestNameScreen: React.FC = () => {
           >
             <Ionicons name="person-outline" size={32} color="#fff" />
           </LinearGradient>
-          <Text style={[styles.title, { color: c.text }]}>Continue as guest</Text>
+          <Text style={[styles.title, { color: c.text }]}>What should we call you?</Text>
           <Text style={[styles.sub, { color: c.textSecondary }]}>
-            Your tasks, habits, and profile stay on this device only. No phone number or
-            account.
+            This name will be used across your dashboard and profile.
           </Text>
         </View>
 
@@ -113,7 +112,7 @@ const GuestNameScreen: React.FC = () => {
             {loading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.btnText}>Enter app</Text>
+              <Text style={styles.btnText}>Continue</Text>
             )}
           </Pressable>
         </View>

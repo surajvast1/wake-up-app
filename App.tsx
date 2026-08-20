@@ -10,7 +10,6 @@ import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 
 LogBox.ignoreLogs([
-  "expo-notifications",
   "setLayoutAnimationEnabledExperimental",
 ]);
 import { NavigationContainer } from "@react-navigation/native";
@@ -24,18 +23,11 @@ import { UiPrefsProvider } from "./src/contexts/UiPrefsContext";
 import { buildNavigationTheme } from "./src/theme/navigationTheme";
 import DrawerContent from "./src/navigation/DrawerContent";
 
+
 import DashboardScreen from "./src/screens/dashboard-screen/DashboardScreen";
 import NewsScreen from "./src/screens/news-screen/NewsScreen";
-import TaskScreen from "./src/screens/task-screen/TaskScreen";
 import HabitsScreen from "./src/screens/habits-screen/HabitsScreen";
-import MeditationScreen from "./src/screens/meditation-screen/MeditationScreen";
-import NearbyPlacesScreen from "./src/screens/nearby-places-screen/NearbyPlacesScreen";
-import CalendarScreen from "./src/screens/calendar-screen/CalendarScreen";
 import ProfileScreen from "./src/screens/profile-screen/ProfileScreen";
-import EditUiScreen from "./src/screens/edit-ui-screen/EditUiScreen";
-import FavoritePeopleScreen from "./src/screens/favorite-people-screen/FavoritePeopleScreen";
-import LikedItemsScreen from "./src/screens/liked-items-screen/LikedItemsScreen";
-import RoutineNavigator from "./src/features/routine/navigation/RoutineNavigator";
 import LoginScreen from "./src/screens/auth-screen/LoginScreen";
 import OtpScreen from "./src/screens/auth-screen/OtpScreen";
 import GuestNameScreen from "./src/screens/auth-screen/GuestNameScreen";
@@ -44,11 +36,11 @@ import { AppErrorBoundary } from "./src/components/AppErrorBoundary";
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-const AuthStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+const AuthStack = ({ initialRouteName = "login" }: { initialRouteName?: "login" | "name" }) => (
+  <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
     <Stack.Screen name="login" component={LoginScreen} />
     <Stack.Screen name="otp" component={OtpScreen} />
-    <Stack.Screen name="guest-name" component={GuestNameScreen} />
+    <Stack.Screen name="name" component={GuestNameScreen} />
   </Stack.Navigator>
 );
 
@@ -71,20 +63,8 @@ const MainDrawer = () => (
       component={NewsScreen}
       options={{ swipeEnabled: false }}
     />
-    <Drawer.Screen name="tasks" component={TaskScreen} />
     <Drawer.Screen name="habits" component={HabitsScreen} />
-    <Drawer.Screen name="routines" component={RoutineNavigator} />
-    <Drawer.Screen name="meditation" component={MeditationScreen} />
-    <Drawer.Screen name="calendar" component={CalendarScreen} />
-    <Drawer.Screen
-      name="nearby"
-      component={NearbyPlacesScreen}
-      options={{ swipeEnabled: false }}
-    />
     <Drawer.Screen name="profile" component={ProfileScreen} />
-    <Drawer.Screen name="edit-ui" component={EditUiScreen} />
-    <Drawer.Screen name="favorite-people" component={FavoritePeopleScreen} />
-    <Drawer.Screen name="liked-items" component={LikedItemsScreen} />
   </Drawer.Navigator>
 );
 
@@ -132,11 +112,11 @@ function useMobileAdsInit(): void {
 }
 
 const RootNavigator = () => {
-  const { user, isGuest, loading, configured } = useAuth();
+  const { user, loading, configured, needsName } = useAuth();
 
   if (loading) return <LoadingScreen />;
-  if (!configured) return <GatedMain />;
-  return user || isGuest ? <GatedMain /> : <AuthStack />;
+  if (!configured) return <AuthStack />;
+  return user ? (needsName ? <AuthStack initialRouteName="name" /> : <GatedMain />) : <AuthStack />;
 };
 
 const ThemedNavigation: React.FC = () => {

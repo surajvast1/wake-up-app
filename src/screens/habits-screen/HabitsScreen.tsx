@@ -37,7 +37,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../contexts/AuthContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 import { AppColors } from "../../theme/colors";
-import MenuButton from "../../components/MenuButton";
+import BackHomeButton from "../../components/BackHomeButton";
 import {
   Habit,
   HabitLog,
@@ -194,22 +194,22 @@ interface HabitsPalette {
 function buildHabitsPalette(isDark: boolean, c: AppColors): HabitsPalette {
   if (isDark) {
     return {
-      pageGradient: ["#1A1224", "#241633", "#2A1A2E"],
-      cardBg: "rgba(255,255,255,0.04)",
-      cardBorder: "rgba(255,255,255,0.08)",
+      pageGradient: ["#0F1115", "#151821", "#1B2130"],
+      cardBg: "#191D26",
+      cardBorder: "rgba(176,192,255,0.16)",
       cardShadow: "#000000",
-      bodyText: "#F5F1FF",
-      subtleText: "#C8BEE0",
-      mutedText: "#8B80A6",
-      gridEmpty: "rgba(255,255,255,0.06)",
+      bodyText: "#F1F3F8",
+      subtleText: "#AAB2C3",
+      mutedText: "#70798C",
+      gridEmpty: "rgba(255,255,255,0.07)",
       streakBg: "rgba(251,191,36,0.16)",
       streakText: "#FCD34D",
-      totalBg: "rgba(167,139,250,0.16)",
-      totalText: "#C4B5FD",
-      consistencyText: "#C4B5FD",
-      accent: "#A78BFA",
-      accentSoft: "rgba(167,139,250,0.18)",
-      fabGradient: ["#7C3AED", "#EC4899"],
+      totalBg: "rgba(142,167,255,0.16)",
+      totalText: "#B0C0FF",
+      consistencyText: "#B0C0FF",
+      accent: "#8EA7FF",
+      accentSoft: "rgba(142,167,255,0.18)",
+      fabGradient: ["#627DD6", "#8EA7FF"],
     };
   }
   return {
@@ -2352,7 +2352,7 @@ const HabitsScreen: React.FC = () => {
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <MenuButton />
+      <BackHomeButton />
 
       <FlatList
         data={habits}

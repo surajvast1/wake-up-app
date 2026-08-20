@@ -18,7 +18,9 @@ import {
   NativeScrollEvent,
   Image,
   Linking,
+  Modal,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlatList as GestureFlatList } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,11 +39,16 @@ import {
   fetchSimilarArticles,
   searchAllCategories,
   timeAgo,
+  DEFAULT_NEWS_SOURCES,
+  NEWS_SOURCE_OPTIONS,
+  NEWS_SOURCES_STORAGE_KEY,
+  loadNewsSources,
+  fetchAvailableNewsSources,
+  fetchAvailableNewsCategories,
 } from "../../services/newsService";
 import CategoryTabs from "./components/CategoryTabs";
 import NewsCard from "./components/NewsCard";
-import MenuButton from "../../components/MenuButton";
-import SwipeToScreens from "../../components/SwipeToScreens";
+import BackHomeButton from "../../components/BackHomeButton";
 import { NoInternetView, ErrorStateView } from "../../components/StatusView";
 import useIsOffline from "../../hooks/useIsOffline";
 import { useNewsReelEngagement } from "../../hooks/useNewsReelEngagement";
@@ -74,41 +81,13 @@ function useReelScroll(
   onScrollBeginDrag: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onMomentumScrollEnd: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
 } {
-  const dragStartRef = useRef(0);
-  const clampingRef = useRef(false);
-
-  const onScrollBeginDrag = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      // Only record the "real" drag origin — ignore momentum events that
-      // our own clamp-animated scroll might trigger.
-      if (clampingRef.current) return;
-      dragStartRef.current = e.nativeEvent.contentOffset.y;
-    },
-    []
-  );
-
-  const onMomentumScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (cardHeight <= 0) return;
-      if (clampingRef.current) {
-        // This momentum event was triggered by our own scrollToOffset clamp.
-        clampingRef.current = false;
-        return;
-      }
-      const startPage = Math.round(dragStartRef.current / cardHeight);
-      const endPage = Math.round(e.nativeEvent.contentOffset.y / cardHeight);
-      const delta = endPage - startPage;
-      if (Math.abs(delta) <= 1) return;
-      const clampedPage = Math.max(0, startPage + Math.sign(delta));
-      if (clampedPage === endPage) return;
-      clampingRef.current = true;
-      listRef.current?.scrollToOffset?.({
-        offset: clampedPage * cardHeight,
-        animated: true,
-      });
-    },
-    [cardHeight, listRef]
-  );
+  // Native paging owns the vertical gesture. A previous manual clamp here
+  // could issue a second scrollToOffset after momentum and pull the reel back
+  // to an older story on Android.
+  void listRef;
+  void cardHeight;
+  const onScrollBeginDrag = useCallback((_e: NativeSyntheticEvent<NativeScrollEvent>) => undefined, []);
+  const onMomentumScrollEnd = useCallback((_e: NativeSyntheticEvent<NativeScrollEvent>) => undefined, []);
 
   return { onScrollBeginDrag, onMomentumScrollEnd };
 }
@@ -292,10 +271,9 @@ const CategoryPage: React.FC<CategoryPageProps> = React.memo(
           article={item}
           cardHeight={cardHeight}
           isDark={isDark}
-          onLiked={handleLiked}
         />
       ),
-      [cardHeight, isDark, handleLiked]
+      [cardHeight, isDark]
     );
 
     const getItemLayout = useCallback(
@@ -551,10 +529,9 @@ const MyFeedCategoryPage: React.FC<MyFeedPageProps> = React.memo(
           article={item}
           cardHeight={cardHeight}
           isDark={isDark}
-          onLiked={handleLiked}
         />
       ),
-      [cardHeight, isDark, handleLiked]
+      [cardHeight, isDark]
     );
 
     const getItemLayout = useCallback(
@@ -882,6 +859,16 @@ const NewsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [contentH, setContentH] = useState(0);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [enabledSources, setEnabledSources] = useState<string[]>([
+    ...DEFAULT_NEWS_SOURCES,
+  ]);
+  const [sourceOptions, setSourceOptions] = useState<string[]>([
+    ...NEWS_SOURCE_OPTIONS,
+  ]);
+  const [newsCategories, setNewsCategories] = useState<NewsCategory[]>(
+    NEWS_CATEGORIES
+  );
 
   const [searchResults, setSearchResults] = useState<NewsArticle[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -899,11 +886,38 @@ const NewsScreen: React.FC = () => {
     }, [])
   );
 
+  useEffect(() => {
+    void Promise.all([
+      loadNewsSources(),
+      fetchAvailableNewsSources(),
+      fetchAvailableNewsCategories(),
+      AsyncStorage.getItem(NEWS_SOURCES_STORAGE_KEY),
+    ]).then(([enabled, available, categories, saved]) => {
+      const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const savedMatchesLiveSource = enabled.some((selected) =>
+        available.some((publisher) => {
+          const a = normalize(selected);
+          const b = normalize(publisher);
+          return a.includes(b) || b.includes(a) || (a.includes("hindu") && b.includes("hindu")) || (a.includes("bbc") && b.includes("bbc"));
+        })
+      );
+      const nextEnabled = saved && savedMatchesLiveSource ? enabled : available;
+      setEnabledSources(nextEnabled);
+      setSourceOptions(available);
+      setNewsCategories(categories);
+      if (!saved || !savedMatchesLiveSource) {
+        void AsyncStorage.setItem(NEWS_SOURCES_STORAGE_KEY, JSON.stringify(nextEnabled));
+      }
+      setActiveIdx(0);
+      setRefreshSignal((value) => value + 1);
+    });
+  }, []);
+
   const isSearchActive = showSearch && searchQuery.trim().length > 0;
 
   useEffect(() => {
     const idx = route.params?.initialCategoryIndex;
-    if (typeof idx !== "number" || idx < 0 || idx >= NEWS_CATEGORIES.length) {
+    if (typeof idx !== "number" || idx < 0 || idx >= newsCategories.length) {
       return;
     }
     const ts = route.params?._newsNavTs;
@@ -919,7 +933,7 @@ const NewsScreen: React.FC = () => {
       });
     }, 80);
     return () => clearTimeout(t);
-  }, [route.params?.initialCategoryIndex, route.params?._newsNavTs]);
+  }, [newsCategories, route.params?.initialCategoryIndex, route.params?._newsNavTs]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -951,14 +965,30 @@ const NewsScreen: React.FC = () => {
   );
 
   const handleTabPress = useCallback((idx: number) => {
+    if (idx === newsCategories.length) {
+      setShowSourcePicker(true);
+      return;
+    }
     setActiveIdx(idx);
     horizontalRef.current?.scrollToIndex({ index: idx, animated: true });
+  }, [newsCategories.length]);
+
+  const toggleSource = useCallback((source: string) => {
+    setEnabledSources((current) => {
+      const next = current.includes(source)
+        ? current.filter((item) => item !== source)
+        : [...current, source];
+      if (next.length === 0) return current;
+      void AsyncStorage.setItem(NEWS_SOURCES_STORAGE_KEY, JSON.stringify(next));
+      setRefreshSignal((value) => value + 1);
+      return next;
+    });
   }, []);
 
   const handleCategoryFromSearch = useCallback((cat: string) => {
     const tab = dbCategoryToTabCategory(cat);
     if (!tab) return;
-    const idx = NEWS_CATEGORIES.indexOf(tab);
+    const idx = newsCategories.indexOf(tab);
     if (idx >= 0) {
       setShowSearch(false);
       setSearchQuery("");
@@ -996,38 +1026,22 @@ const NewsScreen: React.FC = () => {
       : undefined;
 
   const renderPage = useCallback(
-    ({ item, index }: { item: NewsCategory; index: number }) =>
-      item === "My Feed" ? (
-        <MyFeedCategoryPage
-          storageScope={storageScope}
-          supabaseUserId={supabaseUserId}
-          isActive={index === activeIdx}
-          refreshSignal={refreshSignal}
-          cardHeight={cardH}
-          isDark={theme.cardUiDark}
-          isOffline={isOffline}
-          colors={colors}
-          themedStyles={themedStyles}
-          deepLinkArticleLink={deepLinkArticleLink}
-          deepLinkArticleId={deepLinkArticleId}
-          deepLinkNonce={deepLinkNonce}
-        />
-      ) : (
-        <CategoryPage
-          category={item}
-          storageScope={storageScope}
-          isActive={index === activeIdx}
-          refreshSignal={refreshSignal}
-          cardHeight={cardH}
-          isDark={theme.cardUiDark}
-          isOffline={isOffline}
-          colors={colors}
-          themedStyles={themedStyles}
-          deepLinkArticleLink={deepLinkArticleLink}
-          deepLinkArticleId={deepLinkArticleId}
-          deepLinkNonce={deepLinkNonce}
-        />
-      ),
+    ({ item, index }: { item: NewsCategory; index: number }) => (
+      <CategoryPage
+        category={item}
+        storageScope={storageScope}
+        isActive={index === activeIdx}
+        refreshSignal={refreshSignal}
+        cardHeight={cardH}
+        isDark={theme.cardUiDark}
+        isOffline={isOffline}
+        colors={colors}
+        themedStyles={themedStyles}
+        deepLinkArticleLink={deepLinkArticleLink}
+        deepLinkArticleId={deepLinkArticleId}
+        deepLinkNonce={deepLinkNonce}
+      />
+    ),
     [
       cardH,
       theme.cardUiDark,
@@ -1067,72 +1081,26 @@ const NewsScreen: React.FC = () => {
   const searchKeyExtract = useCallback((item: NewsArticle) => item.id, []);
 
   return (
-    <SwipeToScreens rightScreen="dashboard">
     <View style={[themedStyles.container, { backgroundColor: theme.bg }]}>
+      <BackHomeButton />
       <LinearGradient
         colors={theme.headerGrad}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[themedStyles.header, { paddingTop: insets.top + 8 }]}
       >
-        <View style={themedStyles.headerRow}>
-          <View style={{ paddingLeft: 42 }}>
-            <Text
-              style={[themedStyles.headerTitle, { color: theme.textPrimary }]}
-            >
-              News
-            </Text>
-            <Text
-              style={[themedStyles.headerSub, { color: theme.textSecondary }]}
-            >
-              Stay informed, stay ahead
-            </Text>
-          </View>
-          <Pressable
-            onPress={toggleSearch}
-            style={({ pressed }) => [
-              themedStyles.searchIcon,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Ionicons
-              name={showSearch ? "close" : "search"}
-              size={22}
-              color={theme.textPrimary}
-            />
-          </Pressable>
-        </View>
-        {showSearch && (
-          <TextInput
-            style={[
-              themedStyles.searchInput,
-              {
-                backgroundColor: theme.cardUiDark
-                  ? "rgba(255,255,255,0.1)"
-                  : "rgba(0,0,0,0.06)",
-                color: theme.textPrimary,
-              },
-            ]}
-            placeholder="Search across all categories..."
-            placeholderTextColor={colors.placeholder}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-            returnKeyType="search"
-          />
-        )}
+        <View style={{ height: 8 }} />
       </LinearGradient>
 
-      {!isSearchActive && (
-        <CategoryTabs
-          categories={NEWS_CATEGORIES}
-          activeIndex={activeIdx}
-          onSelect={handleTabPress}
-          isDark={theme.cardUiDark}
-        />
-      )}
+      <CategoryTabs
+        categories={newsCategories}
+        activeIndex={activeIdx}
+        onSelect={handleTabPress}
+        isDark={theme.cardUiDark}
+        showSources
+      />
 
-      {isSearchActive ? (
+      {false ? (
         <View style={{ flex: 1 }}>
           {searchLoading && searchResults.length === 0 ? (
             <View style={[themedStyles.center, { flex: 1 }]}>
@@ -1215,7 +1183,7 @@ const NewsScreen: React.FC = () => {
           {contentH > 0 && (
             <FlatList
               ref={horizontalRef}
-              data={NEWS_CATEGORIES}
+              data={newsCategories}
               renderItem={renderPage}
               keyExtractor={catKey}
               horizontal
@@ -1239,9 +1207,60 @@ const NewsScreen: React.FC = () => {
         </View>
       )}
 
-      <MenuButton />
+      <Modal
+        visible={showSourcePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSourcePicker(false)}
+      >
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.55)" }}>
+          <View
+            style={{
+              backgroundColor: theme.cardUiDark ? "#191D26" : "#FFFFFF",
+              borderTopLeftRadius: 26,
+              borderTopRightRadius: 26,
+              padding: 22,
+              paddingBottom: insets.bottom + 22,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <Text style={{ color: theme.textPrimary, fontSize: 22, fontWeight: "900" }}>
+                Select sources
+              </Text>
+              <Pressable onPress={() => setShowSourcePicker(false)}>
+                <Ionicons name="close-circle" size={28} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={{ color: theme.textSecondary, fontSize: 13, marginBottom: 10 }}>
+              Choose which publishers appear when news is fetched.
+            </Text>
+            {sourceOptions.map((source) => {
+              const enabled = enabledSources.includes(source);
+              return (
+                <Pressable
+                  key={source}
+                  onPress={() => toggleSource(source)}
+                  style={({ pressed }) => [
+                    { flexDirection: "row", alignItems: "center", paddingVertical: 11 },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Ionicons
+                    name={enabled ? "checkmark-circle" : "ellipse-outline"}
+                    size={23}
+                    color={enabled ? theme.accent : theme.textSecondary}
+                  />
+                  <Text style={{ color: theme.textPrimary, fontSize: 15, fontWeight: "700", marginLeft: 12 }}>
+                    {source}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+
     </View>
-    </SwipeToScreens>
   );
 };
 

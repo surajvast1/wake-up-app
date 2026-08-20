@@ -5,7 +5,6 @@ import {
   NEWS_PAGE_SIZE,
   TopicNewsCategory,
 } from "../services/newsService";
-import { filterUnseen } from "../services/seenNewsService";
 
 interface UseNewsResult {
   articles: NewsArticle[];
@@ -56,7 +55,7 @@ const useNews = (
           offset: 0,
           limit: NEWS_PAGE_SIZE,
         });
-        const filtered = await filterUnseen(storageScope, page.articles);
+        const filtered = page.articles;
         cacheRef.current = filtered;
         cacheHasMoreRef.current = page.hasMore;
         offsetRef.current = page.articles.length;
@@ -87,7 +86,7 @@ const useNews = (
 
       const seenIds = new Set((cacheRef.current ?? []).map((a) => a.id));
       const fresh = page.articles.filter((a) => !seenIds.has(a.id));
-      const filtered = await filterUnseen(storageScope, fresh);
+      const filtered = fresh;
 
       const next = [...(cacheRef.current ?? []), ...filtered];
       cacheRef.current = next;

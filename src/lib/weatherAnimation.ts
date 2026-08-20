@@ -180,24 +180,23 @@ export function getHeaderSkyGradient(
     switch (period) {
       case "morning":
         return {
-          colors: ["#1A2332", "#1E2A38", "#243B45"],
+          colors: ["#11151F", "#1A2130", "#2A3854"],
           locations: [0, 0.45, 1],
         };
       case "afternoon":
         return {
-          colors: ["#152A2E", "#1A3439", "#1F3F44"],
+          colors: ["#111722", "#1B2638", "#30425F"],
           locations: [0, 0.5, 1],
         };
       case "evening":
-        /* Dusk: warm plum / ember — not the blue-teal of morning. */
         return {
-          colors: ["#241A22", "#2E1F28", "#3A2430"],
+          colors: ["#171923", "#27283A", "#3D3C58"],
           locations: [0, 0.45, 1],
         };
       case "night":
       default:
         return {
-          colors: ["#152238", "#1A2D44", "#203752"],
+          colors: ["#0E1118", "#171D2A", "#293750"],
           locations: [0, 0.5, 1],
         };
     }

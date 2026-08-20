@@ -14,12 +14,12 @@ interface CategoryTabsProps {
   activeIndex: number;
   onSelect: (index: number) => void;
   isDark: boolean;
+  showSources?: boolean;
 }
 
 const TAB_EST_WIDTH = 92;
 
 const CATEGORY_ICONS: Record<NewsCategory, keyof typeof Ionicons.glyphMap> = {
-  "My Feed": "sparkles",
   India: "flag",
   Entertaining: "film",
   Tech: "hardware-chip",
@@ -32,6 +32,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   activeIndex,
   onSelect,
   isDark,
+  showSources = false,
 }) => {
   const scrollRef = useRef<ScrollView>(null);
 
@@ -72,10 +73,9 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
         {categories.map((cat, idx) => {
           const isActive = idx === activeIndex;
           const icon = CATEGORY_ICONS[cat];
-          const keyLabel = cat === "My Feed" ? "my-feed" : cat;
           return (
             <Pressable
-              key={keyLabel}
+              key={cat}
               onPress={() => handlePress(idx)}
               style={[
                 styles.pill,
@@ -101,6 +101,20 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             </Pressable>
           );
         })}
+        {showSources && (
+          <Pressable
+            onPress={() => handlePress(categories.length)}
+            style={[styles.pill, { backgroundColor: pillBg }]}
+          >
+            <Ionicons
+              name="options-outline"
+              size={13}
+              color={pillText}
+              style={styles.pillIcon}
+            />
+            <Text style={[styles.pillText, { color: pillText }]}>Sources</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </View>
   );

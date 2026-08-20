@@ -55,19 +55,6 @@
           "optimizeAdLoading": false
         }
       ],
-      "@react-native-community/datetimepicker",
-      [
-        "expo-calendar",
-        {
-          "calendarPermission": "Allow $(PRODUCT_NAME) to access your calendars to show meetings and events."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to find parks, cafés, and restaurants near you."
-        }
-      ],
       "expo-localization"
     ],
     "owner": "surajvast",

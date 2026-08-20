@@ -1,4 +1,65 @@
 import { supabase, supabaseConfigured } from "../lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+/**
+ * Base URL of the deployed cron app (Vercel), without trailing slash.
+ * Example: `https://your-project.vercel.app`
+ *
+ * When set, all news reads go through `GET /api/preview-news` (server uses
+ * service_role) instead of Supabase anon — use this if `news_articles` RLS
+ * no longer allows public SELECT or you prefer not to expose the table to
+ * clients. No `DASHBOARD_PREVIEW_KEY` or other auth header is required.
+ */
+const NEWS_API_BASE =
+  process.env.EXPO_PUBLIC_NEWS_API_BASE?.trim().replace(/\/$/, "") ?? "";
+
+export function newsApiConfigured(): boolean {
+  return (
+    NEWS_API_BASE.length > 0 &&
+    !NEWS_API_BASE.startsWith("YOUR_") &&
+    !NEWS_API_BASE.includes("placeholder")
+  );
+}
+
+/** News can load from either Supabase (anon) or the cron preview HTTP API. */
+function newsSourceReady(): boolean {
+  return supabaseConfigured;
+}
+
+interface PreviewNewsResponse {
+  ok?: boolean;
+  articles?: unknown[];
+  error?: string;
+}
+
+async function fetchPreviewNews(
+  params: Record<string, string | undefined>
+): Promise<NewsArticle[]> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== "") qs.set(k, v);
+  }
+  const url = `${NEWS_API_BASE}/api/preview-news?${qs.toString()}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  let body: PreviewNewsResponse = {};
+  try {
+    body = (await res.json()) as PreviewNewsResponse;
+  } catch {
+    body = {};
+  }
+  if (!res.ok) {
+    const msg =
+      typeof body.error === "string" && body.error
+        ? body.error
+        : `News API failed (${res.status})`;
+    throw new Error(msg);
+  }
+  const rows = Array.isArray(body.articles) ? body.articles : [];
+  return filterArticlesBySources(rows.map((r) => mapRow(r)));
+}
 
 /* ═══════════════════════ Types ═══════════════════════ */
 
@@ -11,23 +72,21 @@ export interface NewsArticle {
   source: string;
   publishedAt: string;
   category?: string;
-  /** AI-generated terms — overlap with user interests for “my feed” */
+  /** AI / cron — overlap with user interests for “my feed” */
   keywords?: string[];
 }
 
 /** Horizontal tabs: personalized first, then regions/topics. */
 export type NewsCategory =
-  | "My Feed"
   | "India"
   | "Entertaining"
   | "Tech"
   | "Science"
   | "Global";
 
-export type TopicNewsCategory = Exclude<NewsCategory, "My Feed">;
+export type TopicNewsCategory = NewsCategory;
 
 export const NEWS_CATEGORIES: NewsCategory[] = [
-  "My Feed",
   "India",
   "Entertaining",
   "Tech",
@@ -57,7 +116,95 @@ export const MY_FEED_DIGEST_CATEGORIES: TopicNewsCategory[] = [
 ];
 
 export function isTopicNewsCategory(c: NewsCategory): c is TopicNewsCategory {
-  return c !== "My Feed";
+  return true;
+}
+
+export const NEWS_SOURCE_OPTIONS = [
+  "Hindustan Times",
+  "The Hindu",
+  "The Indian Express",
+  "NDTV",
+  "BBC News",
+  "Reuters",
+] as const;
+export const DEFAULT_NEWS_SOURCES = [
+  "Hindustan Times",
+  "The Hindu",
+  "The Indian Express",
+  "NDTV",
+  "BBC News",
+];
+export const NEWS_SOURCES_STORAGE_KEY = "NEWS_SOURCES_V2";
+
+export async function loadNewsSources(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(NEWS_SOURCES_STORAGE_KEY);
+    if (!raw) return [...DEFAULT_NEWS_SOURCES];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const sources = parsed.filter((value): value is string => typeof value === "string");
+      if (sources.length > 0) return sources;
+    }
+  } catch {}
+  return [...DEFAULT_NEWS_SOURCES];
+}
+
+export async function fetchAvailableNewsSources(): Promise<string[]> {
+  if (!supabaseConfigured) return [...NEWS_SOURCE_OPTIONS];
+  const { data, error } = await supabase
+    .from("news_articles")
+    .select("source")
+    .not("source", "is", null)
+    .limit(200);
+  if (error) return [...NEWS_SOURCE_OPTIONS];
+  const fromTable = (data ?? [])
+    .map((row) => String((row as { source?: unknown }).source ?? "").trim())
+    .filter(Boolean);
+  return [...new Set([...NEWS_SOURCE_OPTIONS, ...fromTable])];
+}
+
+export async function fetchAvailableNewsCategories(): Promise<TopicNewsCategory[]> {
+  if (!supabaseConfigured) return NEWS_CATEGORIES.filter(isTopicNewsCategory);
+  const { data, error } = await supabase
+    .from("news_articles")
+    .select("category")
+    .not("category", "is", null)
+    .limit(200);
+  if (error) return NEWS_CATEGORIES.filter(isTopicNewsCategory);
+  const found = new Set<TopicNewsCategory>();
+  for (const row of data ?? []) {
+    const tab = dbCategoryToTabCategory(String((row as { category?: unknown }).category ?? ""));
+    if (tab) found.add(tab);
+  }
+  const preferredOrder: TopicNewsCategory[] = [
+    "India",
+    "Entertaining",
+    "Tech",
+    "Science",
+    "Global",
+  ];
+  const available = preferredOrder.filter((category) => found.has(category));
+  return available.length > 0 ? available : NEWS_CATEGORIES.filter(isTopicNewsCategory);
+}
+
+async function filterArticlesBySources(articles: NewsArticle[]): Promise<NewsArticle[]> {
+  const enabled = await loadNewsSources();
+  const aliases: Record<string, string[]> = {
+    "hindustan times": ["hindustantimes", "hindustan"],
+    "the hindu": ["thehindu", "hindu"],
+    "the indian express": ["theindianexpress", "indianexpress"],
+    "bbc news": ["bbc", "bbcnews"],
+    ndtv: ["ndtv"],
+    reuters: ["reuters"],
+  };
+  return articles.filter((article) =>
+    enabled.some((source) => {
+      const publisher = article.source.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const selected = source.toLowerCase();
+      const names = aliases[selected] ?? [selected.replace(/[^a-z0-9]/g, "")];
+      return names.some((name) => publisher.includes(name));
+    })
+  );
 }
 
 /** Map Supabase `news_articles.category` to a topic tab (not “My Feed”). */
@@ -95,7 +242,7 @@ export function initialNewsTabIndexForArticle(dbCategory?: string | null): numbe
 }
 
 /** Cron keeps ~24h of rows; query slightly wider so UI never misses a bucket */
-const NEWS_LOOKBACK_MS = 30 * 60 * 60 * 1000;
+const NEWS_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 
 /* ═══════════════════════ Date Helpers ═══════════════════════ */
 
@@ -135,11 +282,39 @@ export const formatNewsDate = (dateStr: string): string => {
 
 /* ═══════════════════════ Supabase Queries ═══════════════════════ */
 
+function cleanNewsDescription(value: unknown): string {
+  const text = String(value ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text];
+  return sentences
+    .filter((sentence) => {
+      const lower = sentence.toLowerCase();
+      return ![
+        "download toi app",
+        "download the toi app",
+        "download our app",
+        "subscribe to",
+        "follow us on",
+        "click here",
+        "advertisement",
+        "sponsored",
+      ].some((phrase) => lower.includes(phrase));
+    })
+    .join(" ")
+    .trim();
+}
+
 function mapRow(row: any): NewsArticle {
   return {
     id: String(row.id ?? row.link ?? "").trim() || row.link,
     title: row.title,
-    description: row.description,
+    description: cleanNewsDescription(row.description),
     link: row.link,
     imageUrl: upgradeNewsImageUrl(row.image_url),
     source: row.source,
@@ -170,12 +345,30 @@ export async function fetchNewsByCategory(
   category: TopicNewsCategory,
   options?: { offset?: number; limit?: number }
 ): Promise<NewsPage> {
-  if (!supabaseConfigured) return { articles: [], hasMore: false };
+  if (!newsSourceReady()) return { articles: [], hasMore: false };
 
   const offset = Math.max(0, options?.offset ?? 0);
   const limit = options?.limit ?? NEWS_PAGE_SIZE;
   const dbCategory = CATEGORY_DB_MAP[category];
   const since = new Date(Date.now() - NEWS_LOOKBACK_MS).toISOString();
+
+  if (newsApiConfigured() && !supabaseConfigured) {
+    try {
+      const fetchCount = limit + 1;
+      const rows = await fetchPreviewNews({
+        category: dbCategory,
+        offset: String(offset),
+        limit: String(fetchCount),
+        since,
+      });
+      const hasMore = rows.length > limit;
+      const articles = hasMore ? rows.slice(0, limit) : rows;
+      return { articles, hasMore };
+    } catch (e) {
+      console.error("fetchNewsByCategory (HTTP) error:", e);
+      return { articles: [], hasMore: false };
+    }
+  }
 
   let q = supabase
     .from("news_articles")
@@ -198,7 +391,7 @@ export async function fetchNewsByCategory(
     return { articles: [], hasMore: false };
   }
 
-  const rows = (data || []).map(mapRow);
+  const rows = await filterArticlesBySources((data || []).map(mapRow));
   const hasMore = rows.length > limit;
   if (hasMore) rows.pop();
   return { articles: rows, hasMore };
@@ -226,11 +419,24 @@ export async function fetchMixedDigestArticles(
 export async function searchAllCategories(
   query: string
 ): Promise<NewsArticle[]> {
-  if (!supabaseConfigured) return [];
+  if (!newsSourceReady()) return [];
   const q = query.trim();
   if (!q) return [];
 
   const since = new Date(Date.now() - NEWS_LOOKBACK_MS).toISOString();
+
+  if (newsApiConfigured() && !supabaseConfigured) {
+    try {
+      return await fetchPreviewNews({
+        search: q,
+        limit: "40",
+        since,
+      });
+    } catch (e) {
+      console.error("searchAllCategories (HTTP) error:", e);
+      return [];
+    }
+  }
 
   const { data, error } = await supabase
     .from("news_articles")
@@ -254,7 +460,7 @@ export async function fetchArticlesMatchingKeywords(
   terms: string[],
   limit = 30
 ): Promise<NewsArticle[]> {
-  if (!supabaseConfigured) return [];
+  if (!newsSourceReady()) return [];
   const normalized = [
     ...new Set(
       terms
@@ -265,6 +471,19 @@ export async function fetchArticlesMatchingKeywords(
   if (normalized.length === 0) return [];
 
   const since = new Date(Date.now() - NEWS_LOOKBACK_MS).toISOString();
+
+  if (newsApiConfigured() && !supabaseConfigured) {
+    try {
+      return await fetchPreviewNews({
+        keywords: normalized.join(","),
+        limit: String(Math.min(200, Math.max(1, limit))),
+        since,
+      });
+    } catch (e) {
+      console.error("fetchArticlesMatchingKeywords (HTTP) error:", e);
+      return [];
+    }
+  }
 
   const { data, error } = await supabase
     .from("news_articles")
@@ -385,25 +604,36 @@ export function isBreakingArticle(article: NewsArticle): boolean {
 }
 
 /**
- * Pull the most urgent items across every category. The urgency score handles
- * staleness in the current news table.
+ * Pull the most urgent items across every category. The cron already keeps
+ * 30h of history — the urgency score handles staleness.
  */
 export async function fetchBreakingArticles(limit = 12): Promise<NewsArticle[]> {
-  if (!supabaseConfigured) return [];
+  if (!newsSourceReady()) return [];
   const since = new Date(Date.now() - NEWS_LOOKBACK_MS).toISOString();
 
-  const { data, error } = await supabase
-    .from("news_articles")
-    .select("*")
-    .gte("created_at", since)
-    .order("published_at", { ascending: false })
-    .limit(120);
+  let rows: NewsArticle[];
+  if (newsApiConfigured() && !supabaseConfigured) {
+    try {
+      rows = await fetchPreviewNews({ limit: "120", since });
+    } catch (e) {
+      console.error("fetchBreakingArticles (HTTP) error:", e);
+      return [];
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("news_articles")
+      .select("*")
+      .gte("created_at", since)
+      .order("published_at", { ascending: false })
+      .limit(120);
 
-  if (error) {
-    console.error("fetchBreakingArticles error:", error.message);
-    return [];
+    if (error) {
+      console.error("fetchBreakingArticles error:", error.message);
+      return [];
+    }
+
+    rows = (data || []).map(mapRow);
   }
-  const rows = (data || []).map(mapRow);
   const scored = rows
     .map((a) => ({ a, s: urgencyScore(a) }))
     .filter((x) => x.s >= 2)
@@ -425,7 +655,7 @@ export async function fetchBreakingArticles(limit = 12): Promise<NewsArticle[]> 
 
 /**
  * Find articles similar to `article` by keyword overlap. Uses the article's
- * Supabase `keywords` array. Excludes the
+ * Supabase `keywords` array (populated by the cron via AI). Excludes the
  * source article itself and anything in `excludeIds` / `excludeLinks`.
  */
 export async function fetchSimilarArticles(
@@ -485,9 +715,19 @@ export async function fetchSimilarArticles(
 export async function fetchArticleByLink(
   link: string
 ): Promise<NewsArticle | null> {
-  if (!supabaseConfigured) return null;
+  if (!newsSourceReady()) return null;
   const l = link?.trim();
   if (!l) return null;
+
+  if (newsApiConfigured() && !supabaseConfigured) {
+    try {
+      const rows = await fetchPreviewNews({ link: l });
+      return rows[0] ?? null;
+    } catch (e) {
+      console.error("fetchArticleByLink (HTTP) error:", e);
+      return null;
+    }
+  }
 
   const { data, error } = await supabase
     .from("news_articles")

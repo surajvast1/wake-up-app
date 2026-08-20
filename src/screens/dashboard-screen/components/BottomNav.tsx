@@ -21,13 +21,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { route: "dashboard", label: "Home", icon: "home-outline", iconActive: "home" },
   { route: "news", label: "News", icon: "newspaper-outline", iconActive: "newspaper" },
-  { route: "nearby", label: "Nearby", icon: "location-outline", iconActive: "location" },
-  {
-    route: "routines",
-    label: "Routines",
-    icon: "sunny-outline",
-    iconActive: "sunny",
-  },
+  { route: "habits", label: "Habits", icon: "bar-chart-outline", iconActive: "bar-chart" },
   { route: "profile", label: "Settings", icon: "settings-outline", iconActive: "settings" },
 ];
 

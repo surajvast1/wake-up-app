@@ -10,13 +10,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { dataStorageScope } from "../lib/dataStorageScope";
-import { seedGuestDemoData } from "../services/guestDemoData";
-
-const GUEST_PROFILE_KEY = "GUEST_PROFILE_V1";
-const DEFAULT_GUEST_SESSION: GuestSession = {
-  name: "Daisy",
-  photoUri: null,
-};
 
 export interface GuestSession {
   name: string;
@@ -28,14 +21,16 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   configured: boolean;
-  /** Local-only session (no Supabase account). */
+  /** Deprecated compatibility flag; guest mode is disabled. */
   isGuest: boolean;
   guestSession: GuestSession | null;
+  needsName: boolean;
   /** AsyncStorage scope for tasks / habits / meditation (guest vs user id). */
   storageScope: string;
-  signInWithPhone: (phone: string) => Promise<{ error?: string }>;
-  verifyOtp: (phone: string, token: string) => Promise<{ error?: string }>;
+  sendEmailOtp: (email: string) => Promise<{ error?: string }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{ error?: string }>;
   continueAsGuest: (name: string) => Promise<{ error?: string }>;
+  saveUserName: (name: string) => Promise<{ error?: string }>;
   updateGuestProfile: (updates: Partial<GuestSession>) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -43,39 +38,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export const useAuth = () => useContext(AuthContext);
-
-async function readGuestFromStorage(): Promise<GuestSession | null> {
-  try {
-    const raw = await AsyncStorage.getItem(GUEST_PROFILE_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as GuestSession;
-    if (!p.name || typeof p.name !== "string" || !p.name.trim()) return null;
-    return {
-      name: p.name.trim(),
-      photoUri:
-        p.photoUri && typeof p.photoUri === "string" ? p.photoUri : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function ensureGuestSession(): Promise<GuestSession> {
-  const existing = await readGuestFromStorage();
-  if (existing && existing.name.toLowerCase() !== "guest") return existing;
-  if (existing?.name.toLowerCase() === "guest") {
-    await AsyncStorage.setItem(
-      GUEST_PROFILE_KEY,
-      JSON.stringify(DEFAULT_GUEST_SESSION)
-    );
-    return DEFAULT_GUEST_SESSION;
-  }
-  await AsyncStorage.setItem(
-    GUEST_PROFILE_KEY,
-    JSON.stringify(DEFAULT_GUEST_SESSION)
-  );
-  return DEFAULT_GUEST_SESSION;
-}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -85,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [guestSession, setGuestSession] = useState<GuestSession | null>(null);
+  const [needsName, setNeedsName] = useState(false);
 
   const storageScope = useMemo(
     () => dataStorageScope(isGuest, user?.id),
@@ -93,13 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     if (!supabaseConfigured) {
-      void (async () => {
-        const g = await ensureGuestSession();
-        setGuestSession(g);
-        setIsGuest(true);
-        await seedGuestDemoData();
-        setLoading(false);
-      })();
+      setLoading(false);
       return;
     }
 
@@ -107,19 +64,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        setNeedsName(!String(s.user.user_metadata?.name ?? s.user.user_metadata?.full_name ?? "").trim());
         setIsGuest(false);
         setGuestSession(null);
-        void AsyncStorage.removeItem(GUEST_PROFILE_KEY);
         setLoading(false);
-      } else {
-        void (async () => {
-          const g = await ensureGuestSession();
-          setGuestSession(g);
-          setIsGuest(true);
-          await seedGuestDemoData();
-          setLoading(false);
-        })();
-      }
+      } else setLoading(false);
     });
 
     const {
@@ -128,74 +77,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        setNeedsName(!String(s.user.user_metadata?.name ?? s.user.user_metadata?.full_name ?? "").trim());
         setIsGuest(false);
         setGuestSession(null);
-        void AsyncStorage.removeItem(GUEST_PROFILE_KEY);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithPhone = useCallback(async (phone: string) => {
-    const { error } = await supabase.auth.signInWithOtp({ phone });
+  const sendEmailOtp = useCallback(async (email: string) => {
+    if (!supabaseConfigured) return { error: "Supabase is not configured." };
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: { shouldCreateUser: true },
+    });
     if (error) return { error: error.message };
     return {};
   }, []);
 
-  const verifyOtp = useCallback(async (phone: string, token: string) => {
+  const verifyEmailOtp = useCallback(async (email: string, token: string) => {
+    if (!supabaseConfigured) return { error: "Supabase is not configured." };
     const { data, error } = await supabase.auth.verifyOtp({
-      phone,
-      token,
-      type: "sms",
+      email: email.trim().toLowerCase(),
+      token: token.replace(/\D/g, "").trim(),
+      type: "email",
     });
     if (error) return { error: error.message };
     const s = data.session;
-    if (s?.user) {
-      setSession(s);
-      setUser(s.user);
-      setIsGuest(false);
-      setGuestSession(null);
-      await AsyncStorage.removeItem(GUEST_PROFILE_KEY);
-    }
+    if (!s?.user) return { error: "The code was accepted, but no login session was created. Please request a new code and try again." };
+    setSession(s);
+    setUser(s.user);
+    setIsGuest(false);
+    setGuestSession(null);
+    setNeedsName(!String(s.user.user_metadata?.name ?? s.user.user_metadata?.full_name ?? "").trim());
     return {};
   }, []);
 
-  const continueAsGuest = useCallback(async (name: string) => {
+  const saveUserName = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return { error: "Please enter your name" };
-    const next: GuestSession = { name: trimmed, photoUri: null };
-    await AsyncStorage.setItem(GUEST_PROFILE_KEY, JSON.stringify(next));
-    setGuestSession(next);
-    setIsGuest(true);
-    return {};
-  }, []);
-
-  const updateGuestProfile = useCallback(async (updates: Partial<GuestSession>) => {
-    setGuestSession((prev) => {
-      const base = prev ?? { name: "", photoUri: null };
-      const next: GuestSession = {
-        name:
-          updates.name !== undefined
-            ? updates.name.trim() || base.name
-            : base.name,
-        photoUri:
-          updates.photoUri !== undefined ? updates.photoUri : base.photoUri,
-      };
-      void AsyncStorage.setItem(GUEST_PROFILE_KEY, JSON.stringify(next));
-      return next;
+    if (!user) return { error: "Your session has expired. Please sign in again." };
+    const { error } = await supabase.auth.updateUser({
+      data: { name: trimmed, full_name: trimmed },
     });
-  }, []);
+    if (error) return { error: error.message };
+    await AsyncStorage.setItem("LOCAL_PROFILE", JSON.stringify({ name: trimmed }));
+    setNeedsName(false);
+    return {};
+  }, [user]);
+
+  const continueAsGuest = useCallback(async () => ({
+    error: "Guest mode is disabled. Please use email sign in.",
+  }), []);
+
+  const updateGuestProfile = useCallback(async (_updates: Partial<GuestSession>) => {}, []);
 
   const signOut = useCallback(async () => {
     if (supabaseConfigured) {
       await supabase.auth.signOut();
     }
-    await AsyncStorage.removeItem(GUEST_PROFILE_KEY);
     setUser(null);
     setSession(null);
     setIsGuest(false);
     setGuestSession(null);
+    setNeedsName(false);
   }, []);
 
   return (
@@ -207,10 +153,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         configured: supabaseConfigured,
         isGuest,
         guestSession,
+        needsName,
         storageScope,
-        signInWithPhone,
-        verifyOtp,
+        sendEmailOtp,
+        verifyEmailOtp,
         continueAsGuest,
+        saveUserName,
         updateGuestProfile,
         signOut,
       }}

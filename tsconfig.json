@@ -24,6 +24,22 @@
     "babel.config.js",
     "metro.config.js",
     "jest.config.js"
+    ,"src/screens/calendar-screen/**"
+    ,"src/screens/nearby-places-screen/**"
+    ,"src/screens/meditation-screen/**"
+    ,"src/screens/task-screen/**"
+    ,"src/screens/favorite-people-screen/**"
+    ,"src/screens/liked-items-screen/**"
+    ,"src/services/calendarService.ts"
+    ,"src/services/nearbyPrefetchService.ts"
+    ,"src/services/requestlocation.ts"
+    ,"src/services/waqiService.ts"
+    ,"src/services/aqiStoreService.ts"
+    ,"src/services/realtimeaqi.tsx"
+    ,"src/features/routine/**"
+    ,"src/services/meditationService.ts"
+    ,"src/services/quoteService.ts"
+    ,"src/services/favoritePeopleService.ts"
   ],
   "extends": "./node_modules/expo/tsconfig.base.json"
 }

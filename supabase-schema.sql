@@ -1,5 +1,5 @@
 -- ============================================================
--- Uniflow — reset + create (profiles, habits, likes)
+-- Uniflow — reset + create (profiles, habits, habit logs)
 -- ============================================================
 --
 -- WHAT THIS DOES
@@ -7,7 +7,7 @@
 -- 2) CREATE them again with RLS + policies + indexes
 -- 3) Re-attach signup trigger → auto row in profiles for new signups
 --
--- TABLES: profiles, habits, habit_logs, liked_quotes, liked_news, news_articles
+-- TABLES: profiles, habits, habit_logs, news_articles
 -- Routine DB: commented out below — re-enable when the routine feature ships (see block comment).
 --
 -- STEP-BY-STEP
@@ -30,6 +30,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 -- DROP TABLE IF EXISTS public.routine_bundle CASCADE;
 DROP TABLE IF EXISTS public.habit_logs CASCADE;
 DROP TABLE IF EXISTS public.habits CASCADE;
+DROP TABLE IF EXISTS public.news_articles CASCADE;
 DROP TABLE IF EXISTS public.liked_news CASCADE;
 DROP TABLE IF EXISTS public.liked_quotes CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
@@ -108,63 +109,19 @@ CREATE INDEX idx_habits_user ON public.habits (user_id);
 CREATE INDEX idx_habit_logs_habit ON public.habit_logs (habit_id, date);
 CREATE INDEX idx_habit_logs_user ON public.habit_logs (user_id);
 
--- ── liked_quotes + liked_news ───────────────────────────────
-CREATE TABLE public.liked_quotes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-  text TEXT NOT NULL,
-  author TEXT NOT NULL DEFAULT '',
-  mood TEXT,
-  content_hash TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_id, content_hash)
-);
-
-ALTER TABLE public.liked_quotes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can CRUD own liked_quotes" ON public.liked_quotes;
-CREATE POLICY "Users can CRUD own liked_quotes" ON public.liked_quotes
-  FOR ALL USING (auth.uid() = user_id);
-
-CREATE INDEX idx_liked_quotes_user ON public.liked_quotes (user_id);
-
-CREATE TABLE public.liked_news (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-  content_hash TEXT NOT NULL,
-  article_id TEXT NOT NULL DEFAULT '',
-  title TEXT NOT NULL,
-  link TEXT NOT NULL,
-  description TEXT DEFAULT '',
-  image_url TEXT,
-  source TEXT DEFAULT '',
-  published_at TEXT DEFAULT '',
-  category TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_id, content_hash)
-);
-
-ALTER TABLE public.liked_news ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can CRUD own liked_news" ON public.liked_news;
-CREATE POLICY "Users can CRUD own liked_news" ON public.liked_news
-  FOR ALL USING (auth.uid() = user_id);
-
-CREATE INDEX idx_liked_news_user ON public.liked_news (user_id);
-
--- ── news_articles (shared across all users) ───────────────────────
-DROP TABLE IF EXISTS public.news_articles CASCADE;
-
+-- ── news_articles (cron-populated, shared across all users) ──────
 CREATE TABLE public.news_articles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  category TEXT NOT NULL,            -- 'india','entertaining','tech','science','global' (legacy rows may still say 'business')
-  title TEXT NOT NULL,                -- AI-rewritten headline
-  description TEXT NOT NULL,          -- AI summary (longer copy for detail)
-  original_title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  original_title TEXT NOT NULL DEFAULT '',
   link TEXT NOT NULL,
   image_url TEXT,
-  source TEXT NOT NULL,               -- 'BBC', 'NDTV', etc.
+  source TEXT NOT NULL,
   published_at TIMESTAMPTZ,
-  keywords TEXT[] NOT NULL DEFAULT '{}',  -- for personalization / overlap with user interests
-  feed_order INT NOT NULL DEFAULT 99,     -- 1=india … 5=global for stable tab ordering
+  keywords TEXT[] NOT NULL DEFAULT '{}',
+  feed_order INT NOT NULL DEFAULT 99,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -173,7 +130,6 @@ DROP POLICY IF EXISTS "Anyone can read news" ON public.news_articles;
 CREATE POLICY "Anyone can read news" ON public.news_articles
   FOR SELECT USING (true);
 
--- Cron / server: writes must use service_role API key (JWT claim role = service_role).
 DROP POLICY IF EXISTS "Service role writes news_articles" ON public.news_articles;
 CREATE POLICY "Service role writes news_articles" ON public.news_articles
   FOR ALL

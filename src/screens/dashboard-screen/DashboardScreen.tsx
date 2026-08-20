@@ -13,7 +13,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import LottieView from "lottie-react-native";
-import SwipeToScreens from "../../components/SwipeToScreens";
 import RAnimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -23,24 +22,19 @@ import RAnimated, {
   Easing,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../../contexts/AuthContext";
 import HeaderHero from "./components/HeaderHero";
 import {
   getDayPeriod,
   getHeaderSkyGradient,
-  getSplashLoaderAnimation,
+  getWeatherAnimation,
   heroPrimaryTextColor,
   heroSecondaryTextColor,
 } from "../../lib/weatherAnimation";
-import MeditationPromptCard from "./components/MeditationPromptCard";
-import QuoteSection from "./components/QuoteSection";
-import { warmNearbyPrefetch } from "../../services/nearbyPrefetchService";
 import TodayHabitsCard from "./components/TodayHabitsCard";
 import TodayTasksCard from "./components/TodayTasksCard";
-import DailyTipCard from "./components/DailyTipCard";
-import ManifestCard from "./components/ManifestCard";
-import StartYourDayCard from "../../features/routine/components/StartYourDayCard";
-import MenuButton from "../../components/MenuButton";
-import { useAuth } from "../../contexts/AuthContext";
+import NewsHomeCard from "./components/NewsHomeCard";
+import BottomNav from "./components/BottomNav";
 import { useAppTheme } from "../../contexts/ThemeContext";
 import { getDashboardSurfaceColor, useUiPrefs } from "../../contexts/UiPrefsContext";
 
@@ -60,13 +54,13 @@ function greetingForPeriod(period: ReturnType<typeof getDayPeriod>): string {
 function splashTagline(period: ReturnType<typeof getDayPeriod>): string {
   switch (period) {
     case "morning":
-      return "Warming up your live weather & air quality…";
+      return "A gentle start to your day…";
     case "afternoon":
-      return "Syncing sunshine, skies, and AQI for you…";
+      return "Make today feel intentional…";
     case "evening":
-      return "Painting today’s snapshot before you dive in…";
+      return "Slow down and reset…";
     default:
-      return "Almost there — your dashboard is waking up…";
+      return "A quiet moment for yourself…";
   }
 }
 
@@ -80,7 +74,7 @@ const SplashLoader: React.FC = () => {
   const sky = getHeaderSkyGradient(period, isDark);
   const primaryText = heroPrimaryTextColor(period, isDark);
   const secondaryText = heroSecondaryTextColor(period, isDark);
-  const lottieSource = getSplashLoaderAnimation();
+  const lottieSource = getWeatherAnimation("", "", period, now);
 
   const dot1 = useSharedValue(0.35);
   const dot2 = useSharedValue(0.35);
@@ -238,10 +232,8 @@ let dashboardBootstrapDone = false;
 const SPLASH_MIN_VISIBLE_MS = 1000;
 
 const DashboardScreen: React.FC = () => {
-  const { storageScope, user, isGuest } = useAuth();
   const { colors, isDark } = useAppTheme();
   const { prefs } = useUiPrefs();
-  const supabaseUserId = !isGuest && user?.id ? user.id : null;
 
   const fadeIn = useRef(new Animated.Value(dashboardBootstrapDone ? 1 : 0)).current;
   const [heroReady, setHeroReady] = useState(dashboardBootstrapDone);
@@ -249,7 +241,7 @@ const DashboardScreen: React.FC = () => {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
 
-  /** Hero (weather + AQI) drives splash — quote loads in parallel and can finish later. */
+  /** The lightweight greeting hero drives the splash. */
   const dataReady = heroReady && minSplashElapsed;
 
   useEffect(() => {
@@ -301,44 +293,21 @@ const DashboardScreen: React.FC = () => {
    * cold-load down to near-instant. Only runs once location permission has
    * already been granted — we never request it from the dashboard.
    */
-  useEffect(() => {
-    if (!dataReady) return;
-    const t = setTimeout(() => {
-      void warmNearbyPrefetch("parks");
-    }, 400);
-    return () => clearTimeout(t);
-  }, [dataReady]);
-
   /** Android: extra scroll room when `resize` leaves the field above the keyboard. iOS: KeyboardAvoidingView handles inset — avoid double padding. */
   const scrollBottomPad =
-    32 +
+    128 +
     (Platform.OS === "android" && isKeyboardVisible ? keyboardBottomInset : 0);
 
-  const pageBg = getDashboardSurfaceColor(prefs.colorPreset, isDark, colors.background);
-
-  const orderedBlocks = useMemo(() => {
-    const byId = {
-      quote: prefs.showQuote,
-      manifest: prefs.showManifest,
-      habits: prefs.showHabits,
-    } as const;
-    const orderMap: Record<typeof prefs.layoutMode, Array<keyof typeof byId>> = {
-      "quote-manifest-habits": ["quote", "manifest", "habits"],
-      "manifest-quote-habits": ["manifest", "quote", "habits"],
-      "habits-quote-manifest": ["habits", "quote", "manifest"],
-    };
-    return orderMap[prefs.layoutMode].filter((k) => byId[k]);
-  }, [prefs.layoutMode, prefs.showHabits, prefs.showManifest, prefs.showQuote]);
+  const pageBg = getDashboardSurfaceColor(
+    prefs.colorPreset,
+    isDark,
+    isDark ? colors.background : colors.backgroundSecondary
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: pageBg }]}>
       {!dataReady && <SplashLoader />}
 
-      <SwipeToScreens
-        leftScreen="news"
-        rightScreen="nearby"
-        leftScreenParams={{ _newsNavTs: Date.now() }}
-      >
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -365,31 +334,13 @@ const DashboardScreen: React.FC = () => {
             { opacity: fadeIn, backgroundColor: pageBg },
           ]}
         >
-          {/* Personalized streak / habit nudge — sits right under the AQI/temp hero. */}
-          <DailyTipCard />
-          <StartYourDayCard />
-          {orderedBlocks.map((block) => {
-            if (block === "quote") {
-              return (
-                <QuoteSection
-                  key="quote"
-                  storageScope={storageScope}
-                  supabaseUserId={supabaseUserId}
-                />
-              );
-            }
-            if (block === "manifest") return <ManifestCard key="manifest" />;
-            if (block === "habits") return <TodayHabitsCard key="habits" />;
-            return null;
-          })}
-          <MeditationPromptCard />
+          <TodayHabitsCard />
           <TodayTasksCard />
+          <NewsHomeCard />
         </Animated.View>
       </ScrollView>
       </KeyboardAvoidingView>
-      </SwipeToScreens>
-
-      {dataReady && <MenuButton />}
+      {dataReady && <BottomNav />}
     </View>
   );
 };

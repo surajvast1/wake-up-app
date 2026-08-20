@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Pressable,
   ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,12 +19,11 @@ const RESEND_SECONDS = 60;
 
 const OtpScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { colors: c, isDark } = useAppTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const phone: string = route.params?.phone ?? "";
-  const { verifyOtp, signInWithPhone } = useAuth();
-
+  const { colors: c, isDark } = useAppTheme();
+  const { verifyEmailOtp, sendEmailOtp } = useAuth();
+  const email: string = route.params?.email ?? "";
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,143 +32,105 @@ const OtpScreen: React.FC = () => {
 
   useEffect(() => {
     if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
   }, [countdown]);
 
-  const handleChange = useCallback(
-    (text: string, index: number) => {
+  const handleChange = useCallback((value: string, index: number) => {
+    const pasted = value.replace(/\D/g, "");
+    if (pasted.length > 1) {
       const next = [...digits];
-      next[index] = text.slice(-1);
+      pasted.slice(0, OTP_LENGTH - index).split("").forEach((digit, offset) => {
+        next[index + offset] = digit;
+      });
       setDigits(next);
       setError("");
-      if (text && index < OTP_LENGTH - 1) {
-        inputsRef.current[index + 1]?.focus();
-      }
-    },
-    [digits]
-  );
+      inputsRef.current[Math.min(index + pasted.length, OTP_LENGTH - 1)]?.focus();
+      return;
+    }
+    const next = [...digits];
+    next[index] = pasted.slice(-1);
+    setDigits(next);
+    setError("");
+    if (next[index] && index < OTP_LENGTH - 1) inputsRef.current[index + 1]?.focus();
+  }, [digits]);
 
-  const handleKeyPress = useCallback(
-    (key: string, index: number) => {
-      if (key === "Backspace" && !digits[index] && index > 0) {
-        inputsRef.current[index - 1]?.focus();
-      }
-    },
-    [digits]
-  );
-
-  const handleVerify = async () => {
-    const otp = digits.join("");
-    if (otp.length < OTP_LENGTH) {
-      setError("Please enter the complete OTP");
+  const verify = async () => {
+    const code = digits.join("");
+    if (code.length !== OTP_LENGTH) {
+      setError("Enter the complete 6-digit code");
       return;
     }
     setLoading(true);
     setError("");
-    const result = await verifyOtp(phone, otp);
-    setLoading(false);
-    if (result.error) {
-      setError(result.error);
-      setDigits(Array(OTP_LENGTH).fill(""));
-      inputsRef.current[0]?.focus();
+    try {
+      const result = await verifyEmailOtp(email, code);
+      if (result.error) {
+        setError(result.error);
+        setDigits(Array(OTP_LENGTH).fill(""));
+        inputsRef.current[0]?.focus();
+        return;
+      }
+      navigation.replace("name");
+    } catch (verificationError) {
+      setError(
+        verificationError instanceof Error
+          ? verificationError.message
+          : "Could not verify the code. Please try again."
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleResend = async () => {
+  const resend = async () => {
     if (countdown > 0) return;
-    setCountdown(RESEND_SECONDS);
+    setLoading(true);
     setError("");
-    await signInWithPhone(phone);
+    const result = await sendEmailOtp(email);
+    setLoading(false);
+    if (result.error) setError(result.error);
+    else setCountdown(RESEND_SECONDS);
   };
 
-  const maskedPhone =
-    phone.length > 4
-      ? phone.slice(0, phone.length - 4).replace(/./g, "X") +
-        phone.slice(-4)
-      : phone;
-
   const bgGrad = isDark
-    ? (["#1a2218", "#2d3d28", "#0f140d"] as const)
-    : (["#f0f4ef", "#f5f7f4", "#ffffff"] as const);
+    ? (["#11151F", "#1A2130", "#0E1118"] as const)
+    : (["#F1F6EE", "#F7FAF5", "#FFFFFF"] as const);
 
   return (
     <LinearGradient colors={[...bgGrad]} style={styles.root}>
       <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          style={({ pressed }) => [
-            styles.backBtn,
-            { backgroundColor: c.menuButtonBg },
-            pressed && { opacity: 0.7 },
-          ]}
-        >
+        <Pressable onPress={() => navigation.goBack()} style={[styles.back, { backgroundColor: c.menuButtonBg }]}>
           <Ionicons name="arrow-back" size={24} color={c.menuButtonIcon} />
         </Pressable>
-
         <View style={styles.content}>
-          <Text style={[styles.title, { color: c.text }]}>Verify Phone</Text>
+          <Text style={[styles.title, { color: c.text }]}>Check your email</Text>
           <Text style={[styles.subtitle, { color: c.textSecondary }]}>
             We sent a 6-digit code to{"\n"}
-            <Text style={[styles.phoneBold, { color: c.text }]}>
-              {maskedPhone}
-            </Text>
+            <Text style={{ color: c.text, fontWeight: "900" }}>{email}</Text>
           </Text>
-
           <View style={styles.otpRow}>
-            {digits.map((d, i) => (
+            {digits.map((digit, index) => (
               <TextInput
-                key={i}
-                ref={(ref) => {
-                  inputsRef.current[i] = ref;
-                }}
-                style={[
-                  styles.otpBox,
-                  {
-                    borderColor: d ? c.primary : c.border,
-                    backgroundColor: d ? c.primarySoftBg : c.surface,
-                    color: c.text,
-                  },
-                ]}
-                value={d}
-                onChangeText={(t) => handleChange(t, i)}
-                onKeyPress={({ nativeEvent }) =>
-                  handleKeyPress(nativeEvent.key, i)
-                }
+                key={index}
+                ref={(ref) => { inputsRef.current[index] = ref; }}
+                style={[styles.otpBox, { color: c.text, borderColor: digit ? c.primary : c.inputBorder, backgroundColor: c.inputBg }]}
+                value={digit}
+                onChangeText={(value) => handleChange(value, index)}
                 keyboardType="number-pad"
                 maxLength={1}
-                autoFocus={i === 0}
-                selectTextOnFocus
+                textAlign="center"
+                autoFocus={index === 0}
               />
             ))}
           </View>
-
-          {error !== "" && (
-            <Text style={[styles.errorText, { color: c.danger }]}>{error}</Text>
-          )}
-
-          <Pressable
-            onPress={handleVerify}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.verifyBtn,
-              { backgroundColor: c.primary },
-              pressed && { opacity: 0.85 },
-              loading && { opacity: 0.6 },
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.verifyBtnText}>Verify</Text>
-            )}
+          {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
+          <Pressable onPress={() => void verify()} disabled={loading} style={[styles.button, { backgroundColor: c.primary }, loading && { opacity: 0.6 }]}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify email</Text>}
           </Pressable>
-
-          <Pressable onPress={handleResend} disabled={countdown > 0}>
-            <Text style={[styles.resendText, { color: c.primary }]}>
-              {countdown > 0
-                ? `Resend OTP in ${countdown}s`
-                : "Resend OTP"}
+          <Pressable onPress={() => void resend()} disabled={countdown > 0 || loading} style={styles.resend}>
+            <Text style={{ color: countdown > 0 ? c.textMuted : c.primary, fontWeight: "800" }}>
+              {countdown > 0 ? `Resend code in ${countdown}s` : "Resend code"}
             </Text>
           </Pressable>
         </View>
@@ -181,58 +142,16 @@ const OtpScreen: React.FC = () => {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 24 },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-  },
-  content: { alignItems: "center", paddingTop: 40 },
-  title: { fontSize: 28, fontWeight: "900" },
-  subtitle: {
-    fontSize: 15,
-    fontWeight: "500",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  phoneBold: { fontWeight: "800" },
-  otpRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 32,
-    marginBottom: 12,
-  },
-  otpBox: {
-    width: 48,
-    height: 56,
-    borderRadius: 14,
-    borderWidth: 2,
-    textAlign: "center",
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  errorText: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  verifyBtn: {
-    marginTop: 16,
-    borderRadius: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 60,
-    alignItems: "center",
-  },
-  verifyBtnText: { fontSize: 16, fontWeight: "800", color: "#ffffff" },
-  resendText: {
-    marginTop: 20,
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  back: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  content: { flex: 1, justifyContent: "center" },
+  title: { fontSize: 30, fontWeight: "900", marginBottom: 10 },
+  subtitle: { fontSize: 15, lineHeight: 23, marginBottom: 28 },
+  otpRow: { flexDirection: "row", gap: 9, marginBottom: 18 },
+  otpBox: { flex: 1, height: 56, borderWidth: 1.5, borderRadius: 14, fontSize: 22, fontWeight: "900" },
+  error: { fontSize: 13, fontWeight: "700", marginBottom: 14 },
+  button: { alignItems: "center", borderRadius: 14, paddingVertical: 15 },
+  buttonText: { color: "#fff", fontSize: 16, fontWeight: "900" },
+  resend: { alignSelf: "center", paddingVertical: 18 },
 });
 
 export default OtpScreen;
