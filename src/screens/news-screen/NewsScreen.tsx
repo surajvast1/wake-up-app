@@ -19,13 +19,14 @@ import {
   Image,
   Linking,
   Modal,
+  Animated,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlatList as GestureFlatList } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect, useRoute } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import useNews from "../../hooks/useNews";
 import useMyFeed from "../../hooks/useMyFeed";
 import {
@@ -48,7 +49,6 @@ import {
 } from "../../services/newsService";
 import CategoryTabs from "./components/CategoryTabs";
 import NewsCard from "./components/NewsCard";
-import BackHomeButton from "../../components/BackHomeButton";
 import { NoInternetView, ErrorStateView } from "../../components/StatusView";
 import useIsOffline from "../../hooks/useIsOffline";
 import { useNewsReelEngagement } from "../../hooks/useNewsReelEngagement";
@@ -122,23 +122,42 @@ function createNewsStyles(c: AppColors) {
     emptyText: { fontSize: 15, fontWeight: "700" },
     counterBadge: {
       position: "absolute",
-      bottom: 16,
-      right: 16,
+      top: 18,
+      right: 22,
       backgroundColor: c.overlay,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
       borderRadius: 14,
+      zIndex: 10,
     },
     counterText: { fontSize: 12, fontWeight: "700", color: c.text },
     container: { flex: 1 },
-    header: { paddingHorizontal: 20, paddingBottom: 10 },
+    header: { paddingHorizontal: 16, paddingBottom: 12 },
     headerRow: {
       flexDirection: "row",
       justifyContent: "space-between",
-      alignItems: "flex-start",
+      alignItems: "center",
     },
-    headerTitle: { fontSize: 28, fontWeight: "900" },
-    headerSub: { fontSize: 13, fontWeight: "600", marginTop: 2 },
+    homeButton: {
+      width: 42,
+      height: 42,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 21,
+      borderWidth: 1,
+    },
+    headerCopy: { flex: 1, marginHorizontal: 12 },
+    headerTitle: { fontSize: 22, fontWeight: "900", letterSpacing: -0.3 },
+    headerSub: { fontSize: 11, fontWeight: "600", marginTop: 1 },
+    swipeBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 14,
+    },
+    swipeBadgeText: { fontSize: 10, fontWeight: "800" },
     searchIcon: {
       width: 40,
       height: 40,
@@ -156,6 +175,52 @@ function createNewsStyles(c: AppColors) {
     pagerWrap: { flex: 1 },
   });
 }
+
+interface AnimatedNewsCardProps {
+  article: NewsArticle;
+  cardHeight: number;
+  isDark: boolean;
+  active: boolean;
+}
+
+const AnimatedNewsCard: React.FC<AnimatedNewsCardProps> = React.memo(
+  ({ article, cardHeight, isDark, active }) => {
+    const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+    useEffect(() => {
+      Animated.spring(progress, {
+        toValue: active ? 1 : 0,
+        damping: 18,
+        stiffness: 180,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    }, [active, progress]);
+
+    return (
+      <View style={{ width: SCREEN_W, height: cardHeight, paddingHorizontal: 10, paddingVertical: 8 }}>
+        <Animated.View
+          style={{
+            flex: 1,
+            borderRadius: 24,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: isDark ? 0.34 : 0.14,
+            shadowRadius: 14,
+            elevation: active ? 7 : 2,
+            opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }),
+            transform: [
+              { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.965, 1] }) },
+              { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [7, 0] }) },
+            ],
+          }}
+        >
+          <NewsCard article={article} cardHeight={Math.max(1, cardHeight - 16)} isDark={isDark} />
+        </Animated.View>
+      </View>
+    );
+  }
+);
 
 /* ════════════════════ CategoryPage ════════════════════ */
 
@@ -266,14 +331,15 @@ const CategoryPage: React.FC<CategoryPageProps> = React.memo(
     );
 
     const renderItem = useCallback(
-      ({ item }: { item: NewsArticle }) => (
-        <NewsCard
+      ({ item, index }: { item: NewsArticle; index: number }) => (
+        <AnimatedNewsCard
           article={item}
           cardHeight={cardHeight}
           isDark={isDark}
+          active={index === currentIdx}
         />
       ),
-      [cardHeight, isDark]
+      [cardHeight, currentIdx, isDark]
     );
 
     const getItemLayout = useCallback(
@@ -524,14 +590,15 @@ const MyFeedCategoryPage: React.FC<MyFeedPageProps> = React.memo(
     );
 
     const renderItem = useCallback(
-      ({ item }: { item: NewsArticle }) => (
-        <NewsCard
+      ({ item, index }: { item: NewsArticle; index: number }) => (
+        <AnimatedNewsCard
           article={item}
           cardHeight={cardHeight}
           isDark={isDark}
+          active={index === currentIdx}
         />
       ),
-      [cardHeight, isDark]
+      [cardHeight, currentIdx, isDark]
     );
 
     const getItemLayout = useCallback(
@@ -847,6 +914,7 @@ const searchStyles = StyleSheet.create({
 
 const NewsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { storageScope, user, isGuest } = useAuth();
   const supabaseUserId = isGuest ? null : user?.id ?? null;
@@ -1082,14 +1150,45 @@ const NewsScreen: React.FC = () => {
 
   return (
     <View style={[themedStyles.container, { backgroundColor: theme.bg }]}>
-      <BackHomeButton />
       <LinearGradient
         colors={theme.headerGrad}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[themedStyles.header, { paddingTop: insets.top + 8 }]}
       >
-        <View style={{ height: 8 }} />
+        <View style={themedStyles.headerRow}>
+          <Pressable
+            onPress={() => navigation.navigate("dashboard")}
+            accessibilityRole="button"
+            accessibilityLabel="Back to home"
+            hitSlop={8}
+            style={({ pressed }) => [
+              themedStyles.homeButton,
+              {
+                backgroundColor: theme.cardUiDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.72)",
+                borderColor: theme.cardUiDark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.08)",
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="arrow-back" size={21} color={theme.textPrimary} />
+          </Pressable>
+
+          <View style={themedStyles.headerCopy}>
+            <Text style={[themedStyles.headerTitle, { color: theme.textPrimary }]}>News</Text>
+            <Text style={[themedStyles.headerSub, { color: theme.textSecondary }]}>Fresh stories, one card at a time</Text>
+          </View>
+
+          <View
+            style={[
+              themedStyles.swipeBadge,
+              { backgroundColor: theme.cardUiDark ? "rgba(122,153,114,0.18)" : "rgba(91,117,83,0.10)" },
+            ]}
+          >
+            <Ionicons name="swap-vertical" size={13} color={theme.accent} />
+            <Text style={[themedStyles.swipeBadgeText, { color: theme.accent }]}>SWIPE</Text>
+          </View>
+        </View>
       </LinearGradient>
 
       <CategoryTabs

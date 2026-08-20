@@ -271,6 +271,7 @@ const NewsHomeCard: React.FC = () => {
 
 const styles = StyleSheet.create({
   section: {
+    marginTop: 12,
     marginBottom: 16,
   },
   press: {

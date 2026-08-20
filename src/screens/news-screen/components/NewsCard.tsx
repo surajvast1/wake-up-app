@@ -9,13 +9,10 @@ import {
   StyleSheet,
   Text,
   View,
-  Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { NewsArticle, timeAgo } from "../../../services/newsService";
-
-const { width: SCREEN_W } = Dimensions.get("window");
 
 interface NewsCardProps {
   article: NewsArticle;
@@ -58,7 +55,17 @@ const NewsCard: React.FC<NewsCardProps> = ({ article, cardHeight, isDark }) => {
   const storyText = article.description?.trim() || "The full story is available from the publisher.";
 
   return (
-    <View style={[styles.card, { height: cardHeight, backgroundColor: bg }]} collapsable={false}>
+    <View
+      style={[
+        styles.card,
+        {
+          height: cardHeight,
+          backgroundColor: bg,
+          borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)",
+        },
+      ]}
+      collapsable={false}
+    >
       <View style={styles.imageWrap}>
         {hasImage ? (
           <Image
@@ -112,10 +119,6 @@ const NewsCard: React.FC<NewsCardProps> = ({ article, cardHeight, isDark }) => {
             {relativeTime ? <Text style={[styles.footerText, { color: textSecondary }]}>{relativeTime}</Text> : null}
             <Text style={[styles.footerText, { color: textSecondary }]}>• {article.source || "News"}</Text>
           </View>
-          <Pressable onPress={openLink} style={[styles.publisherButton, { borderColor: accent }]}>
-            <Text style={[styles.publisherText, { color: accent }]}>Publisher</Text>
-            <Ionicons name="open-outline" size={12} color={accent} />
-          </Pressable>
         </View>
       </View>
 
@@ -149,7 +152,7 @@ const NewsCard: React.FC<NewsCardProps> = ({ article, cardHeight, isDark }) => {
 };
 
 const styles = StyleSheet.create({
-  card: { width: SCREEN_W, overflow: "hidden" },
+  card: { width: "100%", overflow: "hidden", borderRadius: 24, borderWidth: 1 },
   imageWrap: { position: "relative", overflow: "hidden" },
   image: { width: "100%", backgroundColor: "#1e293b" },
   imagePlaceholder: { width: "100%", alignItems: "center", justifyContent: "center" },
@@ -171,8 +174,6 @@ const styles = StyleSheet.create({
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12 },
   footerLeft: { flexDirection: "row", alignItems: "center", gap: 7, flex: 1 },
   footerText: { fontSize: 12, fontWeight: "700" },
-  publisherButton: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 7 },
-  publisherText: { fontSize: 11, fontWeight: "900" },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" },
   storyModal: { height: "86%", backgroundColor: "#050505", borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: "hidden" },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 20, borderBottomWidth: 1, borderBottomColor: "#273449" },

@@ -51,9 +51,6 @@ const HeaderHero: React.FC<HeaderHeroProps> = ({ onReady }) => {
         <Text style={[styles.greeting, { color: primary }]}>
           {greetingForPeriod(period)}
         </Text>
-        <Text style={[styles.subtitle, { color: secondary }]}>
-          A calm start to whatever today brings.
-        </Text>
       </View>
       <LottieView
         source={getWeatherAnimation("", "", period, now) as any}
@@ -67,18 +64,18 @@ const HeaderHero: React.FC<HeaderHeroProps> = ({ onReady }) => {
 
 const styles = StyleSheet.create({
   hero: {
-    minHeight: 270,
+    minHeight: 215,
     paddingHorizontal: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  copy: { flex: 1, paddingBottom: 18 },
+  copy: { flex: 1, paddingBottom: 6 },
   eyebrow: {
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 4,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   greeting: {
     fontSize: 32,
@@ -86,14 +83,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: -0.8,
   },
-  subtitle: {
-    maxWidth: 210,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "600",
-    marginTop: 10,
-  },
-  lottie: { width: 150, height: 150 },
+  lottie: { width: 124, height: 124 },
 });
 
 export default HeaderHero;
